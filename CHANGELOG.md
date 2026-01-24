@@ -7,18 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Merge request template for contributions
-- Issue templates for bug reports, features, and questions
-
-### Changed
-- Updated CI catalog components to v1.7.1
-
-## [0.1.0] - 2026-01-23
+## [0.1.0] - 2026-01-24
 
 Initial public release - Feature Complete.
 
 ### Added
+- Merge request template for contributions
+- Issue templates for bug reports, features, and questions
 - **Core String Types**
   - `String` - UTF-8 backed string with Small String Optimization (SSO)
   - `StringBuilder` - Efficient string concatenation
@@ -81,6 +76,7 @@ Initial public release - Feature Complete.
 - Formatting issues across codebase
 
 ### Changed
+- Updated CI catalog components to v1.7.1
 - Licensed under Apache-2.0 for open source release
 
 ## [0.0.1] - 2025-12-30

@@ -2,6 +2,14 @@
 
 A comprehensive Unicode string manipulation library for Zig with full UTF-8/UTF-16/UTF-32 support, Small String Optimization (SSO), and Unicode 15.1 compliance.
 
+## Status
+
+| Aspect | Info |
+|--------|------|
+| API Stability | Beta |
+| Zig Version | 0.14.0+ |
+| Platforms | Linux, macOS, Windows |
+
 ## Features
 
 - **UTF-8 Internal Storage** - Efficient storage like Go and Rust

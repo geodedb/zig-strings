@@ -219,7 +219,7 @@ pub fn parallelEditDistanceBatch(
     }
 
     const pool = getPool();
-    _ = pool.call(void, ParallelEditDistanceBatchTask.task, EditDistanceBatchContext{
+    _ = pool.call(void, ParallelEditDistanceBatchTask().task, EditDistanceBatchContext{
         .source = source,
         .targets = targets,
         .results = results,
@@ -329,7 +329,7 @@ pub fn parallelFuzzySearch(
     }
 
     const pool = getPool();
-    _ = pool.call(void, ParallelFuzzySearchTask.task, FuzzySearchContext{
+    _ = pool.call(void, ParallelFuzzySearchTask().task, FuzzySearchContext{
         .query = query,
         .candidates = candidates,
         .results = results,

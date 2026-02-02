@@ -13,9 +13,22 @@ pub fn build(b: *std.Build) void {
 
     const feature_simd = b.option(bool, "simd", "Enable SIMD-accelerated operations (default: true)") orelse true;
     const feature_unicode_data = b.option(bool, "unicode-data", "Include full Unicode data tables (default: true)") orelse true;
-    // Spice disabled by default due to Zig 0.15.2 compatibility issues
-    const enable_spice = b.option(bool, "spice", "Enable spice-based parallelism") orelse false;
-    _ = enable_spice; // Reserved for future use when spice compatibility is fixed
+    const enable_spice = b.option(bool, "spice", "Enable spice-based parallelism") orelse true;
+
+    // Build options module
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "enable_spice", enable_spice);
+    build_options.addOption(bool, "enable_simd", feature_simd);
+    build_options.addOption(bool, "enable_unicode_data", feature_unicode_data);
+
+    // Get spice dependency if enabled
+    const spice_mod: ?*std.Build.Module = if (enable_spice) blk: {
+        const spice_dep = b.dependency("spice", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        break :blk spice_dep.module("spice");
+    } else null;
 
     // ============================================================
     // Core Type Modules
@@ -650,9 +663,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Suppress unused variable warnings for feature flags
-    _ = feature_simd;
-    _ = feature_unicode_data;
+    // parallel.zig - Spice-based parallel operations
+    const parallel_mod = b.addModule("parallel", .{
+        .root_source_file = b.path("src/parallel.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "build_options", .module = build_options.createModule() },
+        },
+    });
+    if (spice_mod) |sm| {
+        parallel_mod.addImport("spice", sm);
+    }
+
 
     // ============================================================
     // Main Public API Modules
@@ -721,6 +744,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "japanese_encoding", .module = japanese_encoding_mod },
             .{ .name = "korean_encoding", .module = korean_encoding_mod },
             .{ .name = "big5", .module = big5_mod },
+            // Parallel operations
+            .{ .name = "parallel", .module = parallel_mod },
         },
     });
 
@@ -787,6 +812,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "japanese_encoding", .module = japanese_encoding_mod },
             .{ .name = "korean_encoding", .module = korean_encoding_mod },
             .{ .name = "big5", .module = big5_mod },
+            // Parallel operations
+            .{ .name = "parallel", .module = parallel_mod },
         },
     });
 

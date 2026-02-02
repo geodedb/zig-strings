@@ -13,6 +13,9 @@ pub fn build(b: *std.Build) void {
 
     const feature_simd = b.option(bool, "simd", "Enable SIMD-accelerated operations (default: true)") orelse true;
     const feature_unicode_data = b.option(bool, "unicode-data", "Include full Unicode data tables (default: true)") orelse true;
+    // Spice disabled by default due to Zig 0.15.2 compatibility issues
+    const enable_spice = b.option(bool, "spice", "Enable spice-based parallelism") orelse false;
+    _ = enable_spice; // Reserved for future use when spice compatibility is fixed
 
     // ============================================================
     // Core Type Modules

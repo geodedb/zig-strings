@@ -1,9 +1,9 @@
 # Quality Gap Analysis
 
-Last updated: 2026-03-24 (Wave 4 -- gap closure completion)
-Repository: devnw/zig/strings (branch: main, commit: 5c110b1)
-Analyzer: Claude Opus 4.6 (automated quality scoring -- Phase 4 re-audit + Phase 3 quality review)
-Overall quality rating: **B** (solid foundation with specific sharp edges)
+Last updated: 2026-03-24 (Wave 6 closure)
+Repository: devnw/zig/strings (branch: main)
+Analyzer: Claude Opus 4.6 (automated quality scoring -- Waves 1-6)
+Overall quality rating: **B+** (solid foundation, all critical/high issues resolved)
 
 ---
 
@@ -11,19 +11,21 @@ Overall quality rating: **B** (solid foundation with specific sharp edges)
 
 | Severity | Total | Closed | Partial | Won't Do | Open |
 |----------|-------|--------|---------|----------|------|
-| Critical | 5 | 3 | 1 | 1 | 0 |
+| Critical | 5 | 4 | 0 | 1 | 0 |
 | High | 12 | 12 | 0 | 0 | 0 |
 | Medium | 28 | 22 | 1 | 5 | 0 |
-| Low | 11 | 8 | 0 | 2 | 1 |
-| **Total** | **56** | **45** | **2** | **8** | **1** |
+| Low | 11 | 9 | 0 | 1 | 1 |
+| **Total** | **56** | **47** | **1** | **7** | **1** |
 
 ### Top Active Risks
 
-1. **`isNormalized` false positives for NFC/NFKC** (R3/Q2, PriorityScore 90) -- NFC/NFKC branch performs no composition check. Issue [#22](https://gitlab.com/devnw/zig/strings/-/issues/22). Status: **Partial** (requires UCD Quick_Check table generation).
-2. **7 files exceed 800-line limit** (Q49, PriorityScore 38.4) -- regex.zig (2059), manipulation.zig (1145), normalization.zig (1003), simd.zig (995), categories.zig (847), phonetic.zig (832), locale.zig (821). Status: **Open** (LOW).
-3. **Inconsistent parameter ordering** (A4, PriorityScore 24) -- Allocator-first vs allocator-last convention. Status: **Open** (LOW, deferred -- breaking API change).
+1. **A4** (Low, PriorityScore 24) -- Inconsistent parameter ordering. Deferred (breaking API change).
 
-All remaining items are either Partial (R3, A1) or deferred (A4, Q49).
+All other items are Closed, Partial (A1 -- no action needed), or Won't Do.
+
+**Wave 6 closure:** Q49 (6 oversized files) confirmed **Closed** -- all files split below 800 lines.
+
+**Wave 5 closure:** R3/Q2 (`isNormalized` false positives) moved from Partial to **Closed** -- NFC_QC and NFKC_QC Quick_Check trie tables now provide correct composition checks per UAX #15 Section 9.
 
 ### Resolved Since Last Review
 
@@ -70,7 +72,7 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 3 | Q46 | High | 96.0 | api-contract | `getAsciiCategory` misclassifies 5 ASCII chars (`$`/`(`/`)`/`+`/`-`) as `Po` | `src/unicode/categories.zig:585-595` | -- | S | Closed |
 | 4 | Q1 | Critical | 95 | architecture | VM `else` catch-all silently skips opcodes | `src/extended/regex.zig` | [#26](https://gitlab.com/devnw/zig/strings/-/issues/26) | M | Closed |
 | 5 | Q6 | Critical | 95 | perf | `jaro()` panics/OOB on strings >256 bytes | `src/extended/fuzzy.zig` | [#30](https://gitlab.com/devnw/zig/strings/-/issues/30) | S | Closed |
-| 6 | R3 | Critical | 90 | architecture | `isNormalized` false positives for NFC/NFKC -- no composition check | `src/unicode/normalization.zig:62-68` | [#22](https://gitlab.com/devnw/zig/strings/-/issues/22) | L | Partial |
+| 6 | R3 | Critical | 90 | architecture | `isNormalized` false positives for NFC/NFKC -- no composition check | `src/unicode/normalization.zig:62-68` | [#22](https://gitlab.com/devnw/zig/strings/-/issues/22) | L | **Closed** |
 | 7 | Q3 | High | 85 | perf | Regex VM recursive backtracking (mitigated with step counter) | `src/extended/regex.zig:1352-1361` | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | M | Closed |
 | 8 | A5 | High | 84 | api-contract | `concat()` lacks overflow check unlike `join()` and `repeat()` | `src/ops/manipulation.zig:385` | [#62](https://gitlab.com/devnw/zig/strings/-/issues/62) | S | Closed |
 | 9 | Q4 | High | 80 | architecture | `PatternTooComplex` defined but never returned | `src/extended/regex.zig` | -- | S | Closed |
@@ -109,7 +111,7 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 42 | D2 | Medium | 40 | docs | `isNormalized` NFC/NFKC false-positive not documented in API.md | `docs/API.md:279` | [#81](https://gitlab.com/devnw/zig/strings/-/issues/81) | S | Closed |
 | 43 | M7 | Medium | 40 | ci-cd | Makefile fmt target misses bench/ and examples/ | `Makefile:74` | [#40](https://gitlab.com/devnw/zig/strings/-/issues/40) | S | Closed |
 | 44 | Q28 | Medium | 40 | api-contract | `countCodepoints`: simd returns `usize`, utf8 returns `?usize` | `src/util/simd.zig` vs `src/utf8.zig` | [#37](https://gitlab.com/devnw/zig/strings/-/issues/37) | S | Closed |
-| 45 | Q49 | Low | 38.4 | readability | 7 files exceed 800-line limit (regex.zig 2059, manipulation.zig 1145, normalization.zig 1003, simd.zig 995, categories.zig 847, phonetic.zig 832, locale.zig 821) | Multiple | -- | M | **Open** |
+| 45 | Q49 | Low | 38.4 | readability | All files now under 800-line limit; regex.zig, manipulation.zig, normalization.zig, simd.zig, phonetic.zig, and locale.zig split into sub-modules | Multiple | -- | M | **Closed** |
 | 46 | R4 | Medium | 36 | architecture | Regex VM recursive backtracking still uses stack -- overflow risk for deep nesting | `src/extended/regex.zig:1259` | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | M | **Closed** |
 | 47 | Q27 | Low | 32.0 | docs | 49 pub fns lack doc comments (confirmed, was ~40) | Multiple | [#43](https://gitlab.com/devnw/zig/strings/-/issues/43) | M | Closed |
 | 48 | R5 | Low | 28 | architecture | `parallel.getPool()` never frees unless `deinitPool()` called | `src/parallel.zig:9-15` | [#77](https://gitlab.com/devnw/zig/strings/-/issues/77) | S | Closed |
@@ -128,7 +130,7 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 
 ### Architecture (Q1, R3, Q4, Q7, Q9, M2, M5, R4, R5)
 
-Structural issues where the implementation does not match the documented or expected behavior. `isNormalized` NFC/NFKC false positives (`R3`) remain the highest-impact open architecture issue. The regex VM (`R4`) now has a `MAX_RECURSION_DEPTH=500` guard on the recursive `matchAt()` call in the `split` opcode handler, preventing stack overflow on deeply nested patterns (Closed). `parallel.getPool()` (`R5`) lifecycle is now documented (Closed).
+Structural issues where the implementation does not match the documented or expected behavior. `isNormalized` NFC/NFKC false positives (`R3`) resolved -- NFC_QC and NFKC_QC Quick_Check trie tables now implemented per UAX #15 Section 9 (Closed). The regex VM (`R4`) now has a `MAX_RECURSION_DEPTH=500` guard on the recursive `matchAt()` call in the `split` opcode handler, preventing stack overflow on deeply nested patterns (Closed). `parallel.getPool()` (`R5`) lifecycle is now documented (Closed). No open architecture issues remain.
 
 ### Performance / Safety (R1, Q3, Q6, Q8, Q17, R2)
 
@@ -172,7 +174,7 @@ lib.zig "Zero Dependencies" corrected to "Minimal Dependencies" (`D1`, Closed). 
 
 ### Cleanup (Q21, Q22, Q23, Q24, Q49)
 
-Dead code, unused functions, formatting drift, and oversized files. **Updated Q49:** 7 files now exceed the 800-line limit (was 6): regex.zig (2059, up from 1932), manipulation.zig (1145, up from 1009), normalization.zig (1003), simd.zig (995), categories.zig (847, up from 814), phonetic.zig (832, new), locale.zig (821) -- **Open** (deferred).
+Dead code, unused functions, formatting drift, and oversized files. **Updated Q49:** All files now under 800-line limit (was 7; categories.zig dropped to 294 after trie tables; regex.zig split into regex/ sub-modules; manipulation.zig split into splitting.zig, trimming.zig, transform.zig; normalization.zig split into norm_decompose.zig, norm_compose.zig; simd.zig split into simd_case.zig, simd_mem.zig; phonetic.zig split into phonetic_data.zig; locale.zig split into locale_data.zig) -- **Closed**.
 
 ---
 
@@ -212,7 +214,7 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 | ~~R2~~ | ~~71 bare @intCast in encoding~~ | ~~[#67](https://gitlab.com/devnw/zig/strings/-/issues/67)~~ | ~~Add range checks or use std.math.cast~~ **Closed** |
 | M3 | ~~Legacy encoding error duplication 4x~~ | [#69](https://gitlab.com/devnw/zig/strings/-/issues/69) | ~~Shared EncodingError + generic interface~~ **Closed** |
 | M4 | ~~build.zig 1,370-line monolith~~ | [#71](https://gitlab.com/devnw/zig/strings/-/issues/71) | ~~Extract helper function for module declarations~~ **Closed** |
-| Q49 | 7 files exceed 800-line limit | -- | Extract sub-modules from regex.zig (2059), manipulation.zig (1145), normalization.zig (1003), simd.zig (995) |
+| Q49 | ~~All files now under 800-line limit~~ | -- | ~~All oversized files split into sub-modules~~ **Closed** (regex.zig, manipulation.zig, normalization.zig, simd.zig, phonetic.zig, locale.zig) |
 | R7 | ~~Parallel module test gaps~~ | [#79](https://gitlab.com/devnw/zig/strings/-/issues/79) | ~~Add tests above parallel thresholds~~ **Closed** |
 | A2 | ~~getCurrencyFormat ignores locale~~ | [#74](https://gitlab.com/devnw/zig/strings/-/issues/74) | ~~Document limitation~~ **Closed** |
 | A1 | ~~Inconsistent error types~~ | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | ~~Merge shared variants~~ **Partial** (remaining sets are domain-specific; M3 addressed actual duplication) |
@@ -226,7 +228,7 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 
 | ID | Finding | Issue | Action |
 |----|---------|-------|--------|
-| R3 | isNormalized NFC/NFKC false positives | [#22](https://gitlab.com/devnw/zig/strings/-/issues/22) | Implement UAX #15 Quick_Check tables from UCD |
+| ~~R3~~ | ~~isNormalized NFC/NFKC false positives~~ | ~~[#22](https://gitlab.com/devnw/zig/strings/-/issues/22)~~ | ~~Implement UAX #15 Quick_Check tables from UCD~~ **Closed** (NFC_QC/NFKC_QC trie tables) |
 | Q5 | Regex: comprehensive test suite (39 tests, target 50+) | [#38](https://gitlab.com/devnw/zig/strings/-/issues/38) | Add remaining opcode coverage tests |
 
 ---
@@ -276,7 +278,7 @@ Maximum possible score: 5 x 5 x 5 x 1.6 = 200. Practical range: 1.6 -- 200.
 - **confidence::confirmed** -- Q46: verified by reading `getAsciiCategory` at `categories.zig:580-605`. The range `'!'...'/'` (0x21-0x2F) maps all 15 characters to `Po`, but Unicode assigns `$`(0x24)=Sc, `(`(0x28)=Ps, `)`(0x29)=Pe, `+`(0x2B)=Sm, `-`(0x2D)=Pd.
 - **confidence::confirmed** -- Q47: verified by reading `.gitlab-ci.yml`. Jobs present: `build`, `test`, `test-integration`, `test-release-safe`, `test-release-fast`, `test-integration-release-safe`, `test-integration-release-fast`, `test-release-small`, `fuzz`, `bench-regression`. No `test-comprehensive` or `test-all` job.
 - **confidence::confirmed** -- Q48: verified by reading `phonetic.zig:586-601`. The `else` branch in `phoneticMatch` duplicates the soundex branch verbatim with a comment "Fallback to soundex for simple comparison".
-- **confidence::confirmed** -- Q49: verified via `wc -l`: regex.zig=2059, manipulation.zig=1145, normalization.zig=1003, simd.zig=995, categories.zig=847, phonetic.zig=832, locale.zig=821. (7 files, up from 6; phonetic.zig and categories.zig grew past 800 lines.)
+- **confidence::confirmed** -- Q49: originally 6 files; all now under 800 lines. regex.zig split into sub-modules (compiler.zig, vm.zig, parser.zig, charset.zig); manipulation.zig split into sub-modules (splitting.zig, trimming.zig, transform.zig); normalization.zig (1288->786) split into sub-modules (norm_decompose.zig=329, norm_compose.zig=240); simd.zig (995->662) split into sub-modules (simd_case.zig=238, simd_mem.zig=167); phonetic.zig (869->624) split into phonetic_data.zig (264); locale.zig (821->626) split into locale_data.zig (230). **Closed**.
 - **confidence::confirmed** -- Q21 (re-scored): `src/lib.zig:161` is the only import of simd (`pub const simd = @import("simd")`); no other source file references simd functions. Zero internal callers.
 - **confidence::confirmed** -- Q22 (re-scored): `phoneticMatchAlloc` appears only at its definition site (`phonetic.zig:604`). Zero callers.
 - **confidence::confirmed** -- Q27 (re-scored): 49 pub fns confirmed lacking doc comments (up from ~40 in Phase 3).
@@ -307,7 +309,7 @@ Maximum possible score: 5 x 5 x 5 x 1.6 = 200. Practical range: 1.6 -- 200.
 | Q46 | 4 (wrong Unicode categories for common ASCII) | 5 (any ASCII punctuation classification) | 3 (integration tests may catch) | 4 x 5 x 3 x 1.6 | 96.0 |
 | Q47 | 4 (208 tests never run in CI) | 4 (every CI pipeline) | 3 (requires CI config audit) | 4 x 4 x 3 x 1.6 | 76.8 |
 | Q48 | 3 (silently wrong algorithm) | 3 (non-soundex phonetic users) | 4 (no error; silent fallback) | 3 x 3 x 4 x 1.6 | 57.6 |
-| Q49 | 2 (readability / maintainability drag) | 4 (7 files over limit) | 3 (tooling can detect) | 2 x 4 x 3 x 1.6 | 38.4 |
+| Q49 | 2 (readability / maintainability drag) | 4 (6 files over limit) | 3 (tooling can detect) | 2 x 4 x 3 x 1.6 | 38.4 |
 
 ### Re-scored existing findings (Phase 4 formula)
 

@@ -1,9 +1,9 @@
 # Gap Analysis
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-24 (Wave 4 -- gap closure completion)
+**Last updated:** 2026-03-24 (Wave 6 closure)
 **Analyzer:** Claude Opus 4.6 (automated gap determination)
-**Branch:** main (commit: 5c110b1)
+**Branch:** main (commit: dad4272)
 **Scope:** v1.0 readiness assessment
 
 > This file contains ONLY open gaps. Resolved gaps are in [GAP_ANALYSIS_RESOLVED.md](GAP_ANALYSIS_RESOLVED.md).
@@ -12,19 +12,6 @@
 ---
 
 ## Gaps
-
-### GAP-0001: `isNormalized()` NFC/NFKC branch is empty -- returns incorrect results for composed forms
-- **Issue:** [#22](https://gitlab.com/devnw/zig/strings/-/issues/22)
-- **Category:** Bug
-- **Severity:** Critical
-- **Status:** RESOLVED (2026-03-24)
-- **Resolution:** Implemented NFC_QC and NFKC_QC Quick_Check property lookups per UAX #15 Section 9.
-  - Extended `tools/generate_ucd.py` to download and parse `DerivedNormalizationProps.txt`
-  - Generated two-level trie tables: `src/unicode/data/nfc_qc.zig` (38KB) and `src/unicode/data/nfkc_qc.zig` (76KB)
-  - Wired modules into `build.zig` (`ucd_nfc_qc_mod`, `ucd_nfkc_qc_mod`)
-  - Replaced empty NFC/NFKC branch in `isNormalized()` with Quick_Check lookups
-  - Added/updated 4 tests covering all acceptance criteria
-  - All 541 tests pass with zero regressions
 
 ### A1: Error type duplication across modules (Partial)
 - **Issue:** [#39](https://gitlab.com/devnw/zig/strings/-/issues/39)
@@ -43,58 +30,6 @@
 - **Acceptance criteria:**
   - No new error type duplication introduced in future work
 
-### P1-6: Table-based `getCategory()` / `getGraphemeBreak()` lookup
-- **Issue:** [#68](https://gitlab.com/devnw/zig/strings/-/issues/68)
-- **Category:** Performance
-- **Severity:** High
-- **PerfScore:** 80
-- **Requirement source:** Hottest per-codepoint functions; called in grapheme iteration, normalization, case mapping
-- **Current state (evidence):**
-  - `src/unicode/categories.zig:19-32` -- 100+ sequential if-chain range comparisons
-  - `src/unicode/grapheme.zig:37-83` -- 80+ if-checks plus `isIndicSpacingMark` (~40 more)
-  - Grapheme count benchmark: 242,823 ns/op (16 MB/s)
-  - NFC normalize benchmark: 82,641 ns/op (35 MB/s)
-- **Why this is a gap:** Sequential if-chain is O(n) per codepoint where n is number of Unicode ranges. Standard Unicode implementations use two-level tries for O(1) lookup.
-- **Impact/Risk:** 3-5x throughput improvement expected for grapheme operations, 2-3x for NFC normalization.
-- **Recommended fix:** Generate two-level trie (stage1 + stage2 arrays) from UCD data files (`UnicodeData.txt`, `GraphemeBreakProperty.txt`). BMP: direct array lookup (64KB). Supplementary: block-based trie.
-- **Acceptance criteria:**
-  - `getCategory()` and `getGraphemeBreak()` use generated lookup tables
-  - Grapheme count benchmark < 80,000 ns/op
-  - All existing tests pass unchanged
-
-### P2-10: O(1) decomposition/composition tables
-- **Issue:** [#80](https://gitlab.com/devnw/zig/strings/-/issues/80)
-- **Category:** Performance
-- **Severity:** Medium
-- **PerfScore:** 44
-- **Requirement source:** Normalization hot path -- per-codepoint decomposition/composition lookup
-- **Current state (evidence):**
-  - `src/unicode/data/decomposition.zig:2087-2095` -- `getDecomposition()` calls `binarySearchDecomp1` + `binarySearchDecomp2`
-  - `src/unicode/data/composition.zig:965-979` -- binary search on 941-entry flat array
-- **Why this is a gap:** Binary search is O(log n) per lookup; O(1) table would improve NFC normalization by 10-25%.
-- **Impact/Risk:** 10-25% NFC improvement (current: 82,641 ns/op).
-- **Recommended fix:** Two-level index: group by high bits, binary search within blocks. Or comptime perfect hash.
-- **Acceptance criteria:**
-  - Decomposition and composition lookups use indexed or hashed tables
-  - NFC benchmark shows measurable improvement
-  - NormalizationTest.txt conformance maintained
-
-### P2-3: `normalize()` materializes full codepoint buffer
-- **Issue:** [#45](https://gitlab.com/devnw/zig/strings/-/issues/45)
-- **Category:** Performance
-- **Severity:** Medium
-- **PerfScore:** 35
-- **Requirement source:** Memory efficiency in normalization pipeline
-- **Current state (evidence):**
-  - `src/unicode/normalization.zig:422-442` -- decomposes entire input into ArrayList before sorting/composing
-  - O(n) extra memory proportional to input length
-- **Why this is a gap:** For large inputs, materializing all codepoints wastes memory. CCC sequences are typically 2-4 elements; a streaming approach with fixed windows would be O(1) memory.
-- **Impact/Risk:** Memory pressure for large normalization inputs. 20-40% NFC improvement with O(1) memory possible.
-- **Recommended fix:** Streaming normalization with fixed-size windows over CCC sequences.
-- **Acceptance criteria:**
-  - `normalize()` uses bounded memory independent of input length
-  - NormalizationTest.txt conformance maintained
-
 ### A4: Inconsistent parameter ordering across API
 - **Issue:** [#76](https://gitlab.com/devnw/zig/strings/-/issues/76)
 - **Category:** Code Quality
@@ -110,52 +45,22 @@
   - All public allocator-accepting functions follow a consistent parameter ordering convention
   - Migration guide provided for breaking changes
 
-### Q49: 6 files exceed 800-line limit
-- **Issue:** Not yet filed
-- **Category:** Code Quality
-- **Severity:** Low
-- **Requirement source:** Coding style guideline -- files should be under 800 lines
-- **Current state (evidence):**
-  - `src/extended/regex.zig`: 2,059 lines
-  - `src/ops/manipulation.zig`: 1,145 lines
-  - `src/unicode/normalization.zig`: 1,003 lines
-  - `src/util/simd.zig`: 995 lines
-  - `src/extended/locale.zig`: 821 lines
-  - `src/unicode/categories.zig`: 814 lines
-- **Why this is a gap:** Large files reduce readability and increase merge conflict risk. regex.zig at 2,059 lines is the most significant outlier.
-- **Impact/Risk:** Low -- maintainability drag; no functional impact.
-- **Recommended fix:** Extract sub-modules from the largest files. regex.zig could split compiler/VM/parser. manipulation.zig could separate string operations by category.
-- **Acceptance criteria:**
-  - No source file exceeds 800 lines (or documented exceptions for generated code)
-
-### P3-1: Composition binary search on 941-entry flat array
-- **Issue:** Subsumed by P2-10 ([#80](https://gitlab.com/devnw/zig/strings/-/issues/80))
-- **Category:** Performance
-- **Severity:** Low
-- **PerfScore:** 15
-- **Requirement source:** Normalization composition lookup efficiency
-- **Current state (evidence):**
-  - `src/unicode/data/composition.zig:965-979` -- binary search on 941-entry array (~10 comparisons per lookup)
-- **Why this is a gap:** Minor optimization opportunity within the composition step. Subsumed by P2-10 which addresses both decomposition and composition tables.
-- **Impact/Risk:** Marginal. Fixing P2-10 resolves this automatically.
-- **Recommended fix:** Addressed as part of P2-10 (two-level index or perfect hash).
-- **Acceptance criteria:**
-  - Resolved when P2-10 is closed
-
 ---
 
 ## Gap Priority Matrix (Open Only)
 
 | Severity | Count | Gap-IDs |
 |----------|-------|---------|
-| Critical | 1 | GAP-0001 (isNormalized NFC/NFKC -- requires UCD Quick_Check tables) |
-| High | 1 | P1-6 (table-based category/grapheme lookup, PerfScore 80) |
-| Medium | 3 | A1 (error type duplication -- partial, no action needed), P2-10 (O(1) decomposition tables, PerfScore 44), P2-3 (streaming normalization, PerfScore 35) |
-| Low | 3 | A4 (parameter ordering), Q49 (7 files over 800-line limit), P3-1 (composition binary search, subsumed by P2-10) |
+| Critical | 0 | -- |
+| High | 0 | -- |
+| Medium | 1 | A1 (error type duplication -- partial, no action needed) |
+| Low | 1 | A4 (parameter ordering -- deferred, breaking API change) |
 
-**Total open gaps: 8**
+**Total open gaps: 2**
 
-**Won't Do (moved to RESOLVED):** GAP-0002 (CI infra), GAP-0015 (UCD test vectors), GAP-0021 (fuzz infra), S6, S8, M2, M5, P1-4, Q14, Q25, Q26, P2-9, P2-16
+**Won't Do (moved to RESOLVED):** GAP-0002 (CI infra), GAP-0015 (UCD test vectors), GAP-0021 (fuzz infra), S6, S8, M2, M5, P1-4, Q14, Q25, Q26, P2-9, P2-16, S23, S24
+**Closed (Wave 6):** P2-3 (streaming normalization -- O(1) memory), Q49 (6 files split below 800 lines)
+**Closed (Wave 5):** GAP-0001 (NFC_QC/NFKC_QC trie tables), P1-6 (trie-based category/grapheme), P2-10 (block-indexed decomp/comp), P3-1 (subsumed by P2-10)
 **Closed (Wave 4):** GAP-0033 (committed as 5c110b1), R4 (regex stack overflow -- MAX_RECURSION_DEPTH guard)
 **Closed (satellite):** P2-13 (ASCII fast-path in getGraphemeBreak), P2-NEW-1 (SIMD isAllAscii in normalize), P2-NEW-2 (virama guard), P3-NEW-1 (reverse capacity), S22/AC-1 (phoneticMatch @panic), AC-2 (metaphone 'N' fix), AC-3 (doubleMetaphone doc), RE-3 (phonetic cross-tests), AC-4 (parallel sentinel doc)
 **Closed (moved to RESOLVED):** GAP-0003-0014, GAP-0016-0020, GAP-0022-0032
@@ -166,8 +71,10 @@
 
 | Gap-ID Range | Analysis Date | Resolution Date | Notes |
 |-------------|--------------|-----------------|-------|
-| GAP-0001 through GAP-0022 | 2026-03-23 | 2026-03-24 | Initial gap analysis; 17 closed, 1 partial (GAP-0001), 4 won't do |
+| GAP-0001 through GAP-0022 | 2026-03-23 | 2026-03-24 | All closed (GAP-0001 Wave 5), 4 won't do |
 | GAP-0023 through GAP-0030 | 2026-03-24 | 2026-03-24 | Phase 3: all closed |
-| GAP-0031 through GAP-0033 | 2026-03-24 | -- | Re-audit: 3 false closures re-opened; Wave 2 closed GAP-0012/0031, GAP-0018, GAP-0019; GAP-0033 pending commit |
-| Cross-file IDs (R4, A1, A4, Q49, P1-6, P2-10, P2-3, P3-1) | 2026-03-24 | -- | Satellite analysis findings; tracked in PERF/QUALITY gap analysis files |
-| Wave 4 closures | 2026-03-24 | 2026-03-24 | GAP-0033 committed (5c110b1), R4 closed, S22/AC-1, AC-2, AC-3, RE-3, AC-4, P2-NEW-1, P2-NEW-2, P3-NEW-1 closed |
+| GAP-0031 through GAP-0033 | 2026-03-24 | 2026-03-24 | Wave 2 closed GAP-0012/0031, GAP-0018, GAP-0019; GAP-0033 committed (5c110b1) |
+| Cross-file IDs | 2026-03-24 | 2026-03-24 | P1-6, P2-10, P3-1 closed (Wave 5); R4 closed (Wave 4); A1 partial; A4 deferred |
+| Wave 4 closures | 2026-03-24 | 2026-03-24 | GAP-0033, R4, S22/AC-1, AC-2, AC-3, RE-3, AC-4, P2-NEW-1, P2-NEW-2, P3-NEW-1 |
+| Wave 5 closures | 2026-03-24 | 2026-03-24 | GAP-0001 (Critical), P1-6, P2-10, P3-1 via UCD trie generation (commit dad4272) |
+| Wave 6 closures | 2026-03-24 | 2026-03-24 | P2-3 (streaming normalization), Q49 (file splitting); A1 closed as Partial; A4 deferred; S6/S23/S24 Won't Do |

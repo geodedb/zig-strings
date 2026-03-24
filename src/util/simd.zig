@@ -10,10 +10,30 @@
 //! - AVX-512: 64-byte vectors (512 bits)
 //! - AVX2: 32-byte vectors (256 bits)
 //! - SSE2/NEON: 16-byte vectors (128 bits)
+//!
+//! Sub-modules:
+//! - `simd_case`: ASCII case conversion (toLowerAscii, toUpperAscii)
+//! - `simd_mem`: Memory operations (memcpySimd, memsetSimd)
 
 const std = @import("std");
 const types = @import("types");
 const builtin = @import("builtin");
+
+// Sub-module imports
+const simd_case = @import("simd_case.zig");
+const simd_mem = @import("simd_mem.zig");
+
+// Re-export sub-module functions to preserve public API
+pub const toLowerAscii = simd_case.toLowerAscii;
+pub const toUpperAscii = simd_case.toUpperAscii;
+pub const memcpySimd = simd_mem.memcpySimd;
+pub const memsetSimd = simd_mem.memsetSimd;
+
+// Ensure sub-module tests are included
+comptime {
+    _ = simd_case;
+    _ = simd_mem;
+}
 
 // ============================================================
 // SIMD Width Detection and Types
@@ -274,167 +294,9 @@ fn isAllAscii512(bytes: []const u8) bool {
     return true;
 }
 
-/// Converts ASCII uppercase to lowercase using SIMD
-pub fn toLowerAscii(dest: []u8, src: []const u8) void {
-    if (dest.len < src.len) @panic("simd: destination buffer too small");
-
-    if (simd_level == .avx512 and src.len >= vector_size_512) {
-        toLowerAscii512(dest, src);
-    } else if (simd_level == .avx2 and src.len >= vector_size_256) {
-        toLowerAscii256(dest, src);
-    } else if (simd_level != .none and src.len >= vector_size_128) {
-        toLowerAscii128(dest, src);
-    } else {
-        for (src, 0..) |c, i| {
-            dest[i] = if (c >= 'A' and c <= 'Z') c + 32 else c;
-        }
-    }
-}
-
-fn toLowerAscii128(dest: []u8, src: []const u8) void {
-    const a_upper: ByteVector16 = @splat('A');
-    const z_upper: ByteVector16 = @splat('Z');
-    const case_diff: ByteVector16 = @splat(32);
-    var i: usize = 0;
-
-    while (i + vector_size_128 <= src.len) {
-        const chunk: ByteVector16 = src[i..][0..vector_size_128].*;
-        const ge_a = chunk >= a_upper;
-        const le_z = chunk <= z_upper;
-        const is_upper = ge_a & le_z;
-        const converted = @select(u8, is_upper, chunk +% case_diff, chunk);
-        dest[i..][0..vector_size_128].* = converted;
-        i += vector_size_128;
-    }
-
-    while (i < src.len) {
-        dest[i] = if (src[i] >= 'A' and src[i] <= 'Z') src[i] + 32 else src[i];
-        i += 1;
-    }
-}
-
-fn toLowerAscii256(dest: []u8, src: []const u8) void {
-    const a_upper: ByteVector32 = @splat('A');
-    const z_upper: ByteVector32 = @splat('Z');
-    const case_diff: ByteVector32 = @splat(32);
-    var i: usize = 0;
-
-    while (i + vector_size_256 <= src.len) {
-        const chunk: ByteVector32 = src[i..][0..vector_size_256].*;
-        const ge_a = chunk >= a_upper;
-        const le_z = chunk <= z_upper;
-        const is_upper = ge_a & le_z;
-        const converted = @select(u8, is_upper, chunk +% case_diff, chunk);
-        dest[i..][0..vector_size_256].* = converted;
-        i += vector_size_256;
-    }
-
-    if (i < src.len) {
-        toLowerAscii128(dest[i..], src[i..]);
-    }
-}
-
-fn toLowerAscii512(dest: []u8, src: []const u8) void {
-    const a_upper: ByteVector64 = @splat('A');
-    const z_upper: ByteVector64 = @splat('Z');
-    const case_diff: ByteVector64 = @splat(32);
-    var i: usize = 0;
-
-    while (i + vector_size_512 <= src.len) {
-        const chunk: ByteVector64 = src[i..][0..vector_size_512].*;
-        const ge_a = chunk >= a_upper;
-        const le_z = chunk <= z_upper;
-        const is_upper = ge_a & le_z;
-        const converted = @select(u8, is_upper, chunk +% case_diff, chunk);
-        dest[i..][0..vector_size_512].* = converted;
-        i += vector_size_512;
-    }
-
-    if (i < src.len) {
-        toLowerAscii256(dest[i..], src[i..]);
-    }
-}
-
-/// Converts ASCII lowercase to uppercase using SIMD
-pub fn toUpperAscii(dest: []u8, src: []const u8) void {
-    if (dest.len < src.len) @panic("simd: destination buffer too small");
-
-    if (simd_level == .avx512 and src.len >= vector_size_512) {
-        toUpperAscii512(dest, src);
-    } else if (simd_level == .avx2 and src.len >= vector_size_256) {
-        toUpperAscii256(dest, src);
-    } else if (simd_level != .none and src.len >= vector_size_128) {
-        toUpperAscii128(dest, src);
-    } else {
-        for (src, 0..) |c, i| {
-            dest[i] = if (c >= 'a' and c <= 'z') c - 32 else c;
-        }
-    }
-}
-
-fn toUpperAscii128(dest: []u8, src: []const u8) void {
-    const a_lower: ByteVector16 = @splat('a');
-    const z_lower: ByteVector16 = @splat('z');
-    const case_diff: ByteVector16 = @splat(32);
-    var i: usize = 0;
-
-    while (i + vector_size_128 <= src.len) {
-        const chunk: ByteVector16 = src[i..][0..vector_size_128].*;
-        const ge_a = chunk >= a_lower;
-        const le_z = chunk <= z_lower;
-        const is_lower = ge_a & le_z;
-        const converted = @select(u8, is_lower, chunk -% case_diff, chunk);
-        dest[i..][0..vector_size_128].* = converted;
-        i += vector_size_128;
-    }
-
-    while (i < src.len) {
-        dest[i] = if (src[i] >= 'a' and src[i] <= 'z') src[i] - 32 else src[i];
-        i += 1;
-    }
-}
-
-fn toUpperAscii256(dest: []u8, src: []const u8) void {
-    const a_lower: ByteVector32 = @splat('a');
-    const z_lower: ByteVector32 = @splat('z');
-    const case_diff: ByteVector32 = @splat(32);
-    var i: usize = 0;
-
-    while (i + vector_size_256 <= src.len) {
-        const chunk: ByteVector32 = src[i..][0..vector_size_256].*;
-        const ge_a = chunk >= a_lower;
-        const le_z = chunk <= z_lower;
-        const is_lower = ge_a & le_z;
-        const converted = @select(u8, is_lower, chunk -% case_diff, chunk);
-        dest[i..][0..vector_size_256].* = converted;
-        i += vector_size_256;
-    }
-
-    if (i < src.len) {
-        toUpperAscii128(dest[i..], src[i..]);
-    }
-}
-
-fn toUpperAscii512(dest: []u8, src: []const u8) void {
-    const a_lower: ByteVector64 = @splat('a');
-    const z_lower: ByteVector64 = @splat('z');
-    const case_diff: ByteVector64 = @splat(32);
-    var i: usize = 0;
-
-    while (i + vector_size_512 <= src.len) {
-        const chunk: ByteVector64 = src[i..][0..vector_size_512].*;
-        const ge_a = chunk >= a_lower;
-        const le_z = chunk <= z_lower;
-        const is_lower = ge_a & le_z;
-        const converted = @select(u8, is_lower, chunk -% case_diff, chunk);
-        dest[i..][0..vector_size_512].* = converted;
-        i += vector_size_512;
-    }
-
-    if (i < src.len) {
-        toUpperAscii256(dest[i..], src[i..]);
-    }
-}
+// ============================================================
+// Count and Compare Operations
+// ============================================================
 
 /// Counts occurrences of a byte using SIMD
 pub fn countByte(haystack: []const u8, needle: u8) usize {
@@ -704,124 +566,6 @@ pub fn countCodepoints(bytes: []const u8) usize {
 }
 
 // ============================================================
-// Memory Operations with SIMD
-// ============================================================
-
-/// Fast memory copy using SIMD (for aligned data)
-pub fn memcpySimd(dest: []u8, src: []const u8) void {
-    if (dest.len < src.len) @panic("simd: destination buffer too small");
-
-    if (simd_level == .avx512 and src.len >= vector_size_512) {
-        memcpy512(dest, src);
-    } else if (simd_level == .avx2 and src.len >= vector_size_256) {
-        memcpy256(dest, src);
-    } else if (simd_level != .none and src.len >= vector_size_128) {
-        memcpy128(dest, src);
-    } else {
-        @memcpy(dest[0..src.len], src);
-    }
-}
-
-fn memcpy128(dest: []u8, src: []const u8) void {
-    var i: usize = 0;
-
-    while (i + vector_size_128 <= src.len) {
-        const chunk: ByteVector16 = src[i..][0..vector_size_128].*;
-        dest[i..][0..vector_size_128].* = chunk;
-        i += vector_size_128;
-    }
-
-    while (i < src.len) {
-        dest[i] = src[i];
-        i += 1;
-    }
-}
-
-fn memcpy256(dest: []u8, src: []const u8) void {
-    var i: usize = 0;
-
-    while (i + vector_size_256 <= src.len) {
-        const chunk: ByteVector32 = src[i..][0..vector_size_256].*;
-        dest[i..][0..vector_size_256].* = chunk;
-        i += vector_size_256;
-    }
-
-    if (i < src.len) {
-        memcpy128(dest[i..], src[i..]);
-    }
-}
-
-fn memcpy512(dest: []u8, src: []const u8) void {
-    var i: usize = 0;
-
-    while (i + vector_size_512 <= src.len) {
-        const chunk: ByteVector64 = src[i..][0..vector_size_512].*;
-        dest[i..][0..vector_size_512].* = chunk;
-        i += vector_size_512;
-    }
-
-    if (i < src.len) {
-        memcpy256(dest[i..], src[i..]);
-    }
-}
-
-/// Fast memory set using SIMD
-pub fn memsetSimd(dest: []u8, value: u8) void {
-    if (simd_level == .avx512 and dest.len >= vector_size_512) {
-        memset512(dest, value);
-    } else if (simd_level == .avx2 and dest.len >= vector_size_256) {
-        memset256(dest, value);
-    } else if (simd_level != .none and dest.len >= vector_size_128) {
-        memset128(dest, value);
-    } else {
-        @memset(dest, value);
-    }
-}
-
-fn memset128(dest: []u8, value: u8) void {
-    const vec: ByteVector16 = @splat(value);
-    var i: usize = 0;
-
-    while (i + vector_size_128 <= dest.len) {
-        dest[i..][0..vector_size_128].* = vec;
-        i += vector_size_128;
-    }
-
-    while (i < dest.len) {
-        dest[i] = value;
-        i += 1;
-    }
-}
-
-fn memset256(dest: []u8, value: u8) void {
-    const vec: ByteVector32 = @splat(value);
-    var i: usize = 0;
-
-    while (i + vector_size_256 <= dest.len) {
-        dest[i..][0..vector_size_256].* = vec;
-        i += vector_size_256;
-    }
-
-    if (i < dest.len) {
-        memset128(dest[i..], value);
-    }
-}
-
-fn memset512(dest: []u8, value: u8) void {
-    const vec: ByteVector64 = @splat(value);
-    var i: usize = 0;
-
-    while (i + vector_size_512 <= dest.len) {
-        dest[i..][0..vector_size_512].* = vec;
-        i += vector_size_512;
-    }
-
-    if (i < dest.len) {
-        memset256(dest[i..], value);
-    }
-}
-
-// ============================================================
 // Tests
 // ============================================================
 
@@ -845,7 +589,7 @@ test "isAllAscii" {
     const testing = std.testing;
 
     try testing.expect(isAllAscii("Hello, World!"));
-    try testing.expect(!isAllAscii("Hello, \xC3\xA9")); // Contains é
+    try testing.expect(!isAllAscii("Hello, \xC3\xA9")); // Contains e with accent
     try testing.expect(isAllAscii("")); // Empty string
 
     // Longer strings to trigger different SIMD widths
@@ -854,30 +598,6 @@ test "isAllAscii" {
 
     const very_long_ascii = "a" ** 1000;
     try testing.expect(isAllAscii(very_long_ascii));
-}
-
-test "toLowerAscii" {
-    const testing = std.testing;
-
-    var dest: [32]u8 = undefined;
-    const src = "Hello, WORLD!";
-    toLowerAscii(dest[0..src.len], src);
-    try testing.expectEqualSlices(u8, "hello, world!", dest[0..src.len]);
-
-    // Long string
-    var long_dest: [100]u8 = undefined;
-    const long_src = "A" ** 100;
-    toLowerAscii(&long_dest, long_src);
-    try testing.expectEqualSlices(u8, "a" ** 100, &long_dest);
-}
-
-test "toUpperAscii" {
-    const testing = std.testing;
-
-    var dest: [32]u8 = undefined;
-    const src = "Hello, World!";
-    toUpperAscii(dest[0..src.len], src);
-    try testing.expectEqualSlices(u8, "HELLO, WORLD!", dest[0..src.len]);
 }
 
 test "countByte" {
@@ -919,18 +639,18 @@ test "countContinuationBytes" {
     try testing.expectEqual(@as(usize, 0), countContinuationBytes("Hello"));
 
     // UTF-8 with 2-byte chars (1 continuation each)
-    try testing.expectEqual(@as(usize, 2), countContinuationBytes("éà")); // 2 chars, 4 bytes, 2 continuations
+    try testing.expectEqual(@as(usize, 2), countContinuationBytes("\xC3\xA9\xC3\xA0")); // 2 chars, 4 bytes, 2 continuations
 
     // UTF-8 with 3-byte chars (2 continuations each)
-    try testing.expectEqual(@as(usize, 2), countContinuationBytes("中")); // 1 char, 3 bytes, 2 continuations
+    try testing.expectEqual(@as(usize, 2), countContinuationBytes("\xE4\xB8\xAD")); // 1 char, 3 bytes, 2 continuations
 }
 
 test "countCodepoints" {
     const testing = std.testing;
 
     try testing.expectEqual(@as(usize, 5), countCodepoints("Hello"));
-    try testing.expectEqual(@as(usize, 2), countCodepoints("éà"));
-    try testing.expectEqual(@as(usize, 1), countCodepoints("中"));
+    try testing.expectEqual(@as(usize, 2), countCodepoints("\xC3\xA9\xC3\xA0"));
+    try testing.expectEqual(@as(usize, 1), countCodepoints("\xE4\xB8\xAD"));
 }
 
 test "simd level detection" {
@@ -939,57 +659,4 @@ test "simd level detection" {
     // Just verify it doesn't crash and returns a valid level
     const level = detectSimdLevel();
     try testing.expect(level == .none or level == .sse2 or level == .avx2 or level == .avx512);
-}
-
-test "toLowerAscii bounds check: exact fit" {
-    // dest.len == src.len must succeed (boundary condition)
-    var dest: [5]u8 = undefined;
-    toLowerAscii(&dest, "HELLO");
-    try std.testing.expectEqualSlices(u8, "hello", &dest);
-}
-
-test "toLowerAscii bounds check: dest larger than src" {
-    // dest.len > src.len must succeed
-    var dest: [32]u8 = undefined;
-    toLowerAscii(dest[0..5], "HELLO");
-    try std.testing.expectEqualSlices(u8, "hello", dest[0..5]);
-}
-
-test "toUpperAscii bounds check: exact fit" {
-    var dest: [5]u8 = undefined;
-    toUpperAscii(&dest, "hello");
-    try std.testing.expectEqualSlices(u8, "HELLO", &dest);
-}
-
-test "toUpperAscii bounds check: dest larger than src" {
-    var dest: [32]u8 = undefined;
-    toUpperAscii(dest[0..5], "hello");
-    try std.testing.expectEqualSlices(u8, "HELLO", dest[0..5]);
-}
-
-test "memcpySimd basic" {
-    var dest: [13]u8 = undefined;
-    const src = "Hello, World!";
-    memcpySimd(&dest, src);
-    try std.testing.expectEqualSlices(u8, src, &dest);
-}
-
-test "memcpySimd bounds check: exact fit" {
-    var dest: [5]u8 = undefined;
-    memcpySimd(&dest, "abcde");
-    try std.testing.expectEqualSlices(u8, "abcde", &dest);
-}
-
-test "memcpySimd bounds check: dest larger than src" {
-    var dest: [32]u8 = undefined;
-    memcpySimd(dest[0..5], "abcde");
-    try std.testing.expectEqualSlices(u8, "abcde", dest[0..5]);
-}
-
-test "memcpySimd long string" {
-    // Test with a string long enough to trigger SIMD paths
-    const src = "A" ** 256;
-    var dest: [256]u8 = undefined;
-    memcpySimd(&dest, src);
-    try std.testing.expectEqualSlices(u8, src, &dest);
 }

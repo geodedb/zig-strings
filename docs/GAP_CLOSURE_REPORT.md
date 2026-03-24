@@ -2,7 +2,7 @@
 
 **Repository:** devnw/zig/strings
 **Date:** 2026-03-24
-**Waves completed:** Wave 1 (initial gap-close), Wave 2 (post-audit gap-close), Wave 3 (remaining items), Wave 4 (final closures + commit)
+**Waves completed:** Wave 1 (initial gap-close), Wave 2 (post-audit gap-close), Wave 3 (remaining items), Wave 4 (final closures + commit), Wave 5 (UCD trie generation), Wave 6 (streaming normalization + file splitting)
 **Platform:** GitLab (issues not updated -- skip-issues mode)
 
 ---
@@ -11,14 +11,14 @@
 
 | File | Closed | Partial | Won't Do | Remaining Open | Total |
 |------|--------|---------|----------|----------------|-------|
-| GAP_ANALYSIS.md (GAP-0001..0033 + cross-file) | 30 | 1 | 3 | 0 | 34 |
-| SECURITY_GAP_ANALYSIS.md (S1..S24) | 20 | 0 | 2 | 2 (accepted risk) | 24 |
-| QUALITY_GAP_ANALYSIS.md (56 items) | 45 | 2 | 8 | 1 | 56 |
-| PERF_GAP_ANALYSIS.md (34 items) | 24 | 1 | 5 | 4 | 34 |
+| GAP_ANALYSIS.md (GAP-0001..0033 + cross-file) | 32 | 1 | 3 | 0 | 36 |
+| SECURITY_GAP_ANALYSIS.md (S1..S24) | 20 | 0 | 4 | 0 | 24 |
+| QUALITY_GAP_ANALYSIS.md (56 items) | 47 | 1 | 7 | 1 (A4 deferred) | 56 |
+| PERF_GAP_ANALYSIS.md (34 items) | 31 | 0 | 3 | 0 | 34 |
 
 **Note:** Many items are cross-referenced across files (e.g., GAP-0001 = R3 = P0-1; S2 = GAP-0012 = GAP-0031; S18 = D4; S20 = R2; S22 = AC-1/Q48r). Unique findings after deduplication: approximately 85 distinct items.
 
-**Overall (deduplicated):** ~73 closed, 2 partial, 14 won't do, ~6 deferred/open out of ~95 total items
+**Overall (deduplicated):** ~79 closed, 1 partial (A1), 16 won't do, 1 deferred (A4) out of ~97 total items
 
 ---
 
@@ -179,6 +179,42 @@ Closed 10 items, marked 2 as Won't Do. All changes committed as `5c110b1`.
 
 ---
 
+## Wave 5 (UCD Trie Generation)
+
+Closed 4 items via UCD two-level trie table generation (commit dad4272).
+
+| Gap-ID(s) | Title | Evidence |
+|-----------|-------|----------|
+| GAP-0001 / R3 / P0-1 | isNormalized NFC/NFKC Quick_Check (Critical) | NFC_QC/NFKC_QC trie tables generated from DerivedNormalizationProps.txt; normalization.zig:67-76 |
+| P1-6 | Table-based getCategory/getGraphemeBreak | Two-level trie in categories.zig:20-29, grapheme.zig:41-55 |
+| P2-10 | O(1) decomposition/composition tables | Block-indexed lookup in decomposition.zig, composition.zig |
+| P3-1 | Composition binary search on 941-entry array | Subsumed by P2-10 block index |
+
+---
+
+## Wave 6 (Streaming Normalization + File Splitting)
+
+Closed 2 code items, marked 2 as Won't Do, confirmed 2 existing dispositions.
+
+### Wave 6A -- Code Changes
+
+| Gap-ID(s) | Title | Evidence |
+|-----------|-------|----------|
+| P2-3 | Streaming normalization -- O(1) memory | `src/unicode/normalization.zig`, `src/unicode/norm_compose.zig`, `src/unicode/norm_decompose.zig` -- 64-codepoint window streaming replaces full-buffer materialization |
+| Q49 | 6 files split below 800 lines | regex.zig 2147->787 (+3 sub-modules), manipulation.zig 1154->89 (+3), normalization.zig 1035->786 (+2), simd.zig 995->662 (+2), phonetic.zig 869->594 (+1), locale.zig 821->626 (+1) |
+
+### Wave 6B -- Non-Code Dispositions
+
+| Gap-ID(s) | Title | Disposition |
+|-----------|-------|------------|
+| A1 | Error type duplication | Closed as Partial -- remaining error sets are domain-specific, no further consolidation warranted |
+| A4 | Inconsistent parameter ordering | Deferred -- breaking API change, not appropriate for gap closure |
+| S6 | Spice dependency pinned to main | Won't Do (already dispositioned) -- blocked on upstream, no tagged releases |
+| S23 | Regex VM unreachable opcodes | Won't Do -- safe by construction (repeat opcodes compiled away) |
+| S24 | 128 @intCast without formal proof | Won't Do -- accepted risk; highest-risk casts fixed in S20 |
+
+---
+
 ## Won't Do Items (All Waves)
 
 | Gap-ID(s) | File(s) | Title | Reason |
@@ -197,6 +233,8 @@ Closed 10 items, marked 2 as Won't Do. All changes committed as `5c110b1`.
 | P2-6 | PERF | replace() scans string twice | Intentional design for exact allocation |
 | P2-16 | PERF | replaceN() double scan | Intentional design for exact allocation |
 | RM-1 | QUALITY | Duplicate lookup-table builders | Semantic differences; ~15 lines not worth coupling |
+| S23 | SECURITY | Regex VM unreachable for repeat opcodes | Safe by construction (compiled away); accepted risk |
+| S24 | SECURITY | 128 @intCast without formal proof | Accepted risk; highest-risk casts fixed in S20; fuzz testing recommended |
 
 ---
 
@@ -206,21 +244,23 @@ Closed 10 items, marked 2 as Won't Do. All changes committed as `5c110b1`.
 
 | Gap-ID(s) | File(s) | Title | Blocker | Next Steps |
 |-----------|---------|-------|---------|------------|
-| GAP-0001 / R3 / P0-1 | GAP, QUALITY, PERF | isNormalized NFC/NFKC Quick_Check | Requires generating UCD property tables (NFC_QC, NFKC_QC) | Build UCD table generation tooling |
 | A1 | QUALITY | Error type duplication | Remaining error sets are domain-specific | No further consolidation warranted |
 
-### Open (Deferred)
+### Deferred
 
 | Gap-ID(s) | File(s) | Title | Next Steps |
 |-----------|---------|-------|------------|
 | A4 | QUALITY | Inconsistent parameter ordering | Audit and align API conventions (breaking change) |
-| Q49 | QUALITY | 7 files exceed 800-line limit | Extract sub-modules from regex.zig (2059), manipulation.zig (1145) |
-| S23 | SECURITY | Regex VM unreachable for repeat opcodes | Accepted risk (safe by construction) |
-| S24 | SECURITY | 128 @intCast without formal proof | Accepted risk; fuzz testing recommended |
-| P1-6 | PERF | Table-based getCategory/getGraphemeBreak | Two-level trie from UCD data (requires UCD generation tooling) |
-| P2-3 | PERF | normalize() materializes full codepoint buffer | Streaming with fixed windows |
-| P2-10 | PERF | O(1) decomposition/composition tables | Two-level index or perfect hash |
-| P3-1 | PERF | Composition binary search 941 entries | Subsumed by P2-10 |
+
+All other previously deferred items have been resolved:
+- ~~GAP-0001 / R3 / P0-1~~ -- Closed (Wave 5, NFC_QC/NFKC_QC trie tables)
+- ~~Q49~~ -- Closed (Wave 6, all 6 files split below 800 lines)
+- ~~S23~~ -- Won't Do (Wave 6, safe by construction)
+- ~~S24~~ -- Won't Do (Wave 6, accepted risk)
+- ~~P1-6~~ -- Closed (Wave 5, two-level trie from UCD data)
+- ~~P2-3~~ -- Closed (Wave 6, streaming windowed normalization)
+- ~~P2-10~~ -- Closed (Wave 5, block-indexed lookup tables)
+- ~~P3-1~~ -- Closed (Wave 5, subsumed by P2-10)
 
 ---
 
@@ -342,6 +382,12 @@ Closed 10 items, marked 2 as Won't Do. All changes committed as `5c110b1`.
 | P2-NEW-1 | PERF | normalize SIMD isAllAscii | normalization.zig:15,458 + build.zig |
 | P2-NEW-2 | PERF | Indic virama guard | grapheme.zig:367 |
 | P3-NEW-1 | PERF | reverse() capacity | manipulation.zig:319 |
+| GAP-0001 / R3 / P0-1 | GAP, QUALITY, PERF | isNormalized NFC/NFKC Quick_Check | NFC_QC/NFKC_QC trie tables (Wave 5) |
+| P1-6 | PERF | Table-based getCategory/getGraphemeBreak | Two-level trie (Wave 5) |
+| P2-10 | PERF | O(1) decomposition/composition tables | Block-indexed lookup (Wave 5) |
+| P3-1 | PERF | Composition binary search | Subsumed by P2-10 (Wave 5) |
+| P2-3 | PERF, GAP | Streaming normalization | O(1) memory via 64-codepoint window (Wave 6) |
+| Q49 | QUALITY, GAP | 6 files exceed 800-line limit | All 6 files split into sub-modules (Wave 6) |
 
 ---
 
@@ -371,17 +417,29 @@ Closed 10 items, marked 2 as Won't Do. All changes committed as `5c110b1`.
 
 1. ~~**Uncommitted Changes (GAP-0033)**~~ -- **Resolved (Wave 4).** All gap-closure work committed as `5c110b1`. 538 tests pass, 76 build steps succeed, format clean.
 
-2. **UCD Table Generation Tooling** -- GAP-0001 (isNormalized Quick_Check), P1-6 (table-based getCategory/getGraphemeBreak), P2-10 (O(1) decomposition), and multiple Won't-Do items all require a shared UCD code generation pipeline. This is the single largest blocker for further performance and correctness improvements.
+2. ~~**UCD Table Generation Tooling**~~ -- **Resolved (Wave 5).** GAP-0001, P1-6, P2-10, P3-1 all closed via `tools/generate_ucd.py` extensions generating two-level trie and block-indexed lookup tables.
 
 3. **CI Infrastructure** -- GAP-0002 (CI build/test) and P1-5 (benchmark regression) require GitLab runner setup. Q47 (test-comprehensive job) has been added to .gitlab-ci.yml but cannot run until the runner is configured.
+
+4. **Breaking API Change** -- A4 (parameter ordering) deferred. Requires coordinated API audit and migration guide.
 
 ---
 
 ## Platform Issues Updated
 
-Skipped -- `--skip-issues` mode (no GitLab API access configured).
+### Wave 6 Issues Updated
 
-### Wave 3 Issues Needing Update
+| Gap-ID | Issue | Action |
+|--------|-------|--------|
+| P2-3 | [#45](https://gitlab.com/devnw/zig/strings/-/issues/45) | Closed (streaming windowed normalization) |
+| S23 | -- (not filed) | Won't Do (no issue to close) |
+| S24 | -- (not filed) | Won't Do (no issue to close) |
+| Q49 | -- (not filed) | Closed (no issue to close) |
+| A1 | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | Partial -- no further action needed (issue remains open) |
+| A4 | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | Deferred -- breaking API change (issue remains open) |
+| S6 | [#47](https://gitlab.com/devnw/zig/strings/-/issues/47) | Won't Do (confirmed, issue remains open -- blocked upstream) |
+
+### Wave 3 Issues (Historical)
 
 | Gap-ID | Issue | Action Needed |
 |--------|-------|---------------|

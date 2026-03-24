@@ -10,6 +10,10 @@
 //! - NFKC: Compatibility Decomposition + Canonical Composition
 //!
 //! Uses generated Unicode Character Database tables for full Unicode 15.1 support.
+//!
+//! Internal helpers are split across sub-modules to keep file sizes manageable:
+//! - `norm_decompose.zig`: canonical and compatibility decomposition
+//! - `norm_compose.zig`: composition, CCC sorting, streaming window flush
 
 const std = @import("std");
 const types = @import("types");
@@ -24,6 +28,10 @@ const ucd_comp = @import("ucd_composition");
 const ucd_nfc_qc = @import("ucd_nfc_qc");
 const ucd_nfkc_qc = @import("ucd_nfkc_qc");
 
+// Sub-modules
+const norm_decompose = @import("norm_decompose.zig");
+const norm_compose = @import("norm_compose.zig");
+
 pub const Codepoint = types.Codepoint;
 pub const NormalizationForm = types.NormalizationForm;
 pub const StringError = types.StringError;
@@ -34,7 +42,7 @@ pub const CombiningClass = ucd_ccc.CombiningClass;
 /// Gets the Canonical Combining Class for a code point.
 /// Uses generated Unicode 15.1 tables for complete coverage.
 pub fn getCombiningClass(cp: Codepoint) CombiningClass {
-    return ucd_ccc.getCombiningClass(cp);
+    return norm_compose.getCombiningClass(cp);
 }
 
 /// Checks if a code point is a starter (CCC = 0)
@@ -80,14 +88,14 @@ pub fn isNormalized(utf8: []const u8, form: NormalizationForm) bool {
                 if (form == .nfkd) {
                     // Check compatibility decomposition table
                     var compat_buf: [18]Codepoint = undefined;
-                    if (getCompatibilityDecomposition(cp, &compat_buf) != null) {
+                    if (norm_decompose.getCompatibilityDecomposition(cp, &compat_buf) != null) {
                         return false;
                     }
                 }
                 // Check canonical decomposition: if the UCD table has a
                 // decomposition for this codepoint, it is not fully decomposed.
-                if (ucd_decomp.getDecomposition(cp)) |decomp| {
-                    if (decomp.len != 1 or decomp[0] != cp) {
+                if (ucd_decomp.getDecomposition(cp)) |decomp_result| {
+                    if (decomp_result.len != 1 or decomp_result[0] != cp) {
                         return false;
                     }
                 }
@@ -108,355 +116,28 @@ pub fn isNormalized(utf8: []const u8, form: NormalizationForm) bool {
 /// Returns the decomposition or the original code point if no decomposition exists.
 /// Uses generated Unicode 15.1 tables for complete coverage.
 pub fn decompose(cp: Codepoint, buf: []Codepoint) []Codepoint {
-    return decomposeWithCompat(cp, buf, false);
+    return norm_decompose.decomposeWithCompat(cp, buf, false);
 }
 
 /// Decomposes a code point with optional compatibility decomposition (for NFKC/NFKD)
 pub fn decomposeWithCompat(cp: Codepoint, buf: []Codepoint, use_compat: bool) []Codepoint {
-    // Hangul algorithmic decomposition
-    if (cp >= 0xAC00 and cp <= 0xD7A3) {
-        return decomposeHangul(cp, buf);
-    }
-
-    // For NFKC/NFKD, check compatibility decomposition first
-    if (use_compat) {
-        if (getCompatibilityDecomposition(cp, buf)) |result| {
-            return result;
-        }
-    }
-
-    // Use generated UCD decomposition table
-    if (ucd_decomp.getDecomposition(cp)) |decomp| {
-        if (buf.len >= decomp.len) {
-            for (decomp, 0..) |d, i| {
-                buf[i] = d;
-            }
-            return buf[0..decomp.len];
-        }
-    }
-
-    // No decomposition - return original code point
-    if (buf.len > 0) {
-        buf[0] = cp;
-        return buf[0..1];
-    }
-    return &.{};
+    return norm_decompose.decomposeWithCompat(cp, buf, use_compat);
 }
-
-/// Gets compatibility decomposition for a code point (for NFKC/NFKD)
-/// Returns null if no compatibility decomposition exists
-fn getCompatibilityDecomposition(cp: Codepoint, buf: []Codepoint) ?[]Codepoint {
-    // Latin ligatures
-    switch (cp) {
-        0xFB00 => { // ff -> ff
-            if (buf.len >= 2) {
-                buf[0] = 'f';
-                buf[1] = 'f';
-                return buf[0..2];
-            }
-        },
-        0xFB01 => { // fi -> fi
-            if (buf.len >= 2) {
-                buf[0] = 'f';
-                buf[1] = 'i';
-                return buf[0..2];
-            }
-        },
-        0xFB02 => { // fl -> fl
-            if (buf.len >= 2) {
-                buf[0] = 'f';
-                buf[1] = 'l';
-                return buf[0..2];
-            }
-        },
-        0xFB03 => { // ffi -> ffi
-            if (buf.len >= 3) {
-                buf[0] = 'f';
-                buf[1] = 'f';
-                buf[2] = 'i';
-                return buf[0..3];
-            }
-        },
-        0xFB04 => { // ffl -> ffl
-            if (buf.len >= 3) {
-                buf[0] = 'f';
-                buf[1] = 'f';
-                buf[2] = 'l';
-                return buf[0..3];
-            }
-        },
-        0xFB05 => { // st -> st
-            if (buf.len >= 2) {
-                buf[0] = 's';
-                buf[1] = 't';
-                return buf[0..2];
-            }
-        },
-        0xFB06 => { // st -> st
-            if (buf.len >= 2) {
-                buf[0] = 's';
-                buf[1] = 't';
-                return buf[0..2];
-            }
-        },
-        else => {},
-    }
-
-    // Fullwidth ASCII (U+FF01-U+FF5E -> U+0021-U+007E)
-    if (cp >= 0xFF01 and cp <= 0xFF5E) {
-        if (buf.len >= 1) {
-            buf[0] = @intCast(cp - 0xFF01 + 0x0021);
-            return buf[0..1];
-        }
-    }
-
-    // Halfwidth Katakana (U+FF65-U+FF9F -> corresponding fullwidth)
-    // Just decompose to the fullwidth equivalent
-    if (cp >= 0xFF65 and cp <= 0xFF9F) {
-        if (buf.len >= 1) {
-            // Map halfwidth to fullwidth katakana
-            const halfwidth_to_fullwidth = [_]Codepoint{
-                0x30FB, 0x30F2, 0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30E3, // FF65-FF6C
-                0x30E5, 0x30E7, 0x30C3, 0x30FC, 0x30A2, 0x30A4, 0x30A6, 0x30A8, // FF6D-FF74
-                0x30AA, 0x30AB, 0x30AD, 0x30AF, 0x30B1, 0x30B3, 0x30B5, 0x30B7, // FF75-FF7C
-                0x30B9, 0x30BB, 0x30BD, 0x30BF, 0x30C1, 0x30C4, 0x30C6, 0x30C8, // FF7D-FF84
-                0x30CA, 0x30CB, 0x30CC, 0x30CD, 0x30CE, 0x30CF, 0x30D2, 0x30D5, // FF85-FF8C
-                0x30D8, 0x30DB, 0x30DE, 0x30DF, 0x30E0, 0x30E1, 0x30E2, 0x30E4, // FF8D-FF94
-                0x30E6, 0x30E8, 0x30E9, 0x30EA, 0x30EB, 0x30EC, 0x30ED, 0x30EF, // FF95-FF9C
-                0x30F3, 0x3099, 0x309A, // FF9D-FF9F
-            };
-            const idx = cp - 0xFF65;
-            if (idx < halfwidth_to_fullwidth.len) {
-                buf[0] = halfwidth_to_fullwidth[idx];
-                return buf[0..1];
-            }
-        }
-    }
-
-    // Circled numbers 1-20 (U+2460-U+2473 -> 1-20)
-    if (cp >= 0x2460 and cp <= 0x2473) {
-        const num = cp - 0x2460 + 1;
-        if (num <= 9) {
-            if (buf.len >= 1) {
-                buf[0] = @intCast('0' + num);
-                return buf[0..1];
-            }
-        } else if (num <= 20) {
-            if (buf.len >= 2) {
-                buf[0] = if (num >= 10 and num <= 19) '1' else '2';
-                buf[1] = @intCast('0' + (num % 10));
-                return buf[0..2];
-            }
-        }
-    }
-
-    // Circled uppercase letters A-Z (U+24B6-U+24CF -> A-Z)
-    if (cp >= 0x24B6 and cp <= 0x24CF) {
-        if (buf.len >= 1) {
-            buf[0] = @intCast('A' + (cp - 0x24B6));
-            return buf[0..1];
-        }
-    }
-
-    // Circled lowercase letters a-z (U+24D0-U+24E9 -> a-z)
-    if (cp >= 0x24D0 and cp <= 0x24E9) {
-        if (buf.len >= 1) {
-            buf[0] = @intCast('a' + (cp - 0x24D0));
-            return buf[0..1];
-        }
-    }
-
-    // Superscript digits 0-9 (partial)
-    switch (cp) {
-        0x2070 => { // superscript 0
-            if (buf.len >= 1) {
-                buf[0] = '0';
-                return buf[0..1];
-            }
-        },
-        0x00B9 => { // superscript 1
-            if (buf.len >= 1) {
-                buf[0] = '1';
-                return buf[0..1];
-            }
-        },
-        0x00B2 => { // superscript 2
-            if (buf.len >= 1) {
-                buf[0] = '2';
-                return buf[0..1];
-            }
-        },
-        0x00B3 => { // superscript 3
-            if (buf.len >= 1) {
-                buf[0] = '3';
-                return buf[0..1];
-            }
-        },
-        0x2074...0x2079 => { // superscript 4-9
-            if (buf.len >= 1) {
-                buf[0] = @intCast('0' + (cp - 0x2070));
-                return buf[0..1];
-            }
-        },
-        else => {},
-    }
-
-    // Subscript digits 0-9 (U+2080-U+2089)
-    if (cp >= 0x2080 and cp <= 0x2089) {
-        if (buf.len >= 1) {
-            buf[0] = @intCast('0' + (cp - 0x2080));
-            return buf[0..1];
-        }
-    }
-
-    // Roman numerals
-    switch (cp) {
-        0x2160 => { // Roman numeral I
-            if (buf.len >= 1) {
-                buf[0] = 'I';
-                return buf[0..1];
-            }
-        },
-        0x2161 => { // Roman numeral II
-            if (buf.len >= 2) {
-                buf[0] = 'I';
-                buf[1] = 'I';
-                return buf[0..2];
-            }
-        },
-        0x2162 => { // Roman numeral III
-            if (buf.len >= 3) {
-                buf[0] = 'I';
-                buf[1] = 'I';
-                buf[2] = 'I';
-                return buf[0..3];
-            }
-        },
-        0x2163 => { // Roman numeral IV
-            if (buf.len >= 2) {
-                buf[0] = 'I';
-                buf[1] = 'V';
-                return buf[0..2];
-            }
-        },
-        0x2164 => { // Roman numeral V
-            if (buf.len >= 1) {
-                buf[0] = 'V';
-                return buf[0..1];
-            }
-        },
-        0x2170 => { // Roman numeral i (lowercase)
-            if (buf.len >= 1) {
-                buf[0] = 'i';
-                return buf[0..1];
-            }
-        },
-        else => {},
-    }
-
-    return null;
-}
-
-/// Decomposes a Hangul syllable algorithmically
-fn decomposeHangul(cp: Codepoint, buf: []Codepoint) []Codepoint {
-    const S_BASE: u21 = 0xAC00;
-    const L_BASE: u21 = 0x1100;
-    const V_BASE: u21 = 0x1161;
-    const T_BASE: u21 = 0x11A7;
-    const V_COUNT: u21 = 21;
-    const T_COUNT: u21 = 28;
-    const N_COUNT: u21 = V_COUNT * T_COUNT;
-
-    const s_index = cp - S_BASE;
-    const l_index = s_index / N_COUNT;
-    const v_index = (s_index % N_COUNT) / T_COUNT;
-    const t_index = s_index % T_COUNT;
-
-    if (buf.len < 2) return &.{};
-
-    buf[0] = L_BASE + l_index;
-    buf[1] = V_BASE + v_index;
-
-    if (t_index > 0) {
-        if (buf.len < 3) return buf[0..2];
-        buf[2] = T_BASE + t_index;
-        return buf[0..3];
-    }
-
-    return buf[0..2];
-}
-
-// ============================================================================
-// Canonical Composition
-// ============================================================================
 
 /// Looks up a primary composite for a (starter, combiner) pair
 /// Uses generated Unicode 15.1 tables for complete coverage.
 /// Returns null if no composite exists
 pub fn getComposite(starter: Codepoint, combiner: Codepoint) ?Codepoint {
-    // Use generated UCD composition table (includes Hangul algorithmic composition)
-    return ucd_comp.getComposite(starter, combiner);
+    return norm_compose.getComposite(starter, combiner);
 }
 
-/// Canonical composition algorithm (UAX #15)
-/// Takes a decomposed buffer and composes it in-place
-fn composeBuffer(buffer: []Codepoint) usize {
-    if (buffer.len == 0) return 0;
-
-    var write_idx: usize = 0;
-    var starter_idx: usize = 0;
-    var last_ccc: CombiningClass = 0;
-
-    // The first character is always kept
-    write_idx = 1;
-
-    var i: usize = 1;
-    while (i < buffer.len) : (i += 1) {
-        const cp = buffer[i];
-        const ccc = getCombiningClass(cp);
-
-        // Check if we can compose with the starter
-        const starter = buffer[starter_idx];
-
-        // A combining character can compose with a starter if:
-        // 1. The starter is a starter (CCC = 0)
-        // 2. The combining character is not blocked by an intervening character
-        //    (blocked if there's a character between them with CCC >= this char's CCC)
-        // 3. A primary composite exists for the pair
-        const blocked = (last_ccc != 0 and last_ccc >= ccc);
-
-        if (!blocked) {
-            if (getComposite(starter, cp)) |composite| {
-                // Composition succeeded - replace starter
-                buffer[starter_idx] = composite;
-                // Don't update last_ccc since we consumed the combining character
-                continue;
-            }
-        }
-
-        // No composition - copy character
-        if (ccc == 0) {
-            // New starter
-            starter_idx = write_idx;
-            last_ccc = 0;
-        } else {
-            last_ccc = ccc;
-        }
-        buffer[write_idx] = cp;
-        write_idx += 1;
-    }
-
-    return write_idx;
-}
-
-/// Maximum allowed expansion ratio for normalization output.
-/// Protects against pathological inputs (normalization bombs) where a small
-/// input could expand into an extremely large output. Typical Unicode text
-/// expands by at most 3x during decomposition; 10x provides ample headroom
-/// for all legitimate use cases.
-const MAX_EXPANSION_RATIO: usize = 10;
-
-/// Normalizes a UTF-8 string to the specified form using an allocator
+/// Normalizes a UTF-8 string to the specified form using an allocator.
+///
+/// Uses a streaming approach with bounded memory: codepoints are processed in
+/// windows delimited by starters (CCC=0). Each window is sorted, optionally
+/// composed, and flushed to the output before the next window begins. A
+/// fixed-size stack buffer handles the common case; dynamic allocation is used
+/// only for exceptionally long combining sequences.
 pub fn normalize(allocator: std.mem.Allocator, utf8: []const u8, form: NormalizationForm) ![]u8 {
     // ASCII fast-path: ASCII text is always in all normalization forms.
     // This avoids the full decompose-sort-compose pipeline for pure ASCII,
@@ -470,175 +151,93 @@ pub fn normalize(allocator: std.mem.Allocator, utf8: []const u8, form: Normaliza
     const should_compose = (form == .nfc or form == .nfkc);
     const use_compat = (form == .nfkc or form == .nfkd);
 
-    // Step 1: Decompose all characters into a buffer
-    // For NFKC/NFKD, use compatibility decomposition
-    var codepoints: std.ArrayList(Codepoint) = .empty;
-    defer codepoints.deinit(allocator);
-    // Pre-allocate to avoid repeated reallocations. Input length in bytes is
-    // a reasonable upper bound for codepoint count (1 byte per ASCII char,
-    // fewer codepoints for multi-byte sequences).
-    try codepoints.ensureTotalCapacity(allocator, utf8.len);
-
-    var iter = std.unicode.Utf8Iterator{ .bytes = utf8, .i = 0 };
-    var decomp_buf: [18]Codepoint = undefined; // Max decomposition length
-
-    while (iter.nextCodepoint()) |cp| {
-        const decomposed = decomposeWithCompat(cp, &decomp_buf, use_compat);
-        try codepoints.appendSlice(allocator, decomposed);
-    }
-
-    // Normalization bomb protection: reject inputs where decomposition causes
-    // excessive expansion, which could be used for denial-of-service attacks.
-    if (codepoints.items.len > utf8.len * MAX_EXPANSION_RATIO) {
-        return error.OutputTooLarge;
-    }
-
-    // Step 2: Sort combining marks by canonical combining class (canonical ordering)
-    sortByCombiningClass(codepoints.items);
-
-    // Step 3: For NFC/NFKC, apply canonical composition
-    var final_len = codepoints.items.len;
-    if (should_compose and codepoints.items.len > 0) {
-        final_len = composeBuffer(codepoints.items);
-    }
-
-    // Step 4: Encode back to UTF-8
+    // Output buffer -- only the final UTF-8 result is accumulated here.
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
     // Pre-allocate to avoid repeated reallocations during encoding.
     try result.ensureTotalCapacity(allocator, utf8.len);
 
-    var encode_buf: [4]u8 = undefined;
-    for (codepoints.items[0..final_len]) |cp| {
-        const encoded = codepoint_mod.encodeUtf8(cp, &encode_buf);
-        try result.appendSlice(allocator, encoded);
+    // Fixed-size window buffer for the current starter + combining sequence.
+    var window_buf: [norm_compose.WINDOW_BUF_SIZE]Codepoint = undefined;
+    var window_len: usize = 0;
+
+    // Dynamic fallback for exceptionally long CCC sequences.
+    var overflow: std.ArrayList(Codepoint) = .empty;
+    defer overflow.deinit(allocator);
+    var using_overflow = false;
+
+    // Normalization bomb protection: track decomposed codepoint count vs input bytes.
+    var total_codepoints: usize = 0;
+
+    var iter = std.unicode.Utf8Iterator{ .bytes = utf8, .i = 0 };
+    var decomp_buf: [18]Codepoint = undefined; // Max decomposition length
+
+    while (iter.nextCodepoint()) |cp| {
+        const decomposed = norm_decompose.decomposeWithCompat(cp, &decomp_buf, use_compat);
+
+        for (decomposed) |dcp| {
+            total_codepoints += 1;
+
+            // Normalization bomb protection: reject inputs where decomposition
+            // causes excessive expansion.
+            if (total_codepoints > utf8.len * norm_compose.MAX_EXPANSION_RATIO) {
+                return error.OutputTooLarge;
+            }
+
+            const dcp_ccc = norm_compose.getCombiningClass(dcp);
+
+            // If this is a starter and we already have content in the window,
+            // flush the previous window before starting a new one.
+            if (dcp_ccc == 0 and (window_len > 0 or using_overflow)) {
+                var new_carry: ?Codepoint = null;
+                if (using_overflow) {
+                    try norm_compose.flushWindow(overflow.items, should_compose, !should_compose, &result, allocator, &new_carry);
+                    overflow.clearRetainingCapacity();
+                    using_overflow = false;
+                } else {
+                    try norm_compose.flushWindow(window_buf[0..window_len], should_compose, !should_compose, &result, allocator, &new_carry);
+                }
+                window_len = 0;
+
+                // When composing, carry the last codepoint into the next window
+                // so consecutive starters can compose (e.g. Hangul Jamo L+V->LV).
+                if (new_carry) |c| {
+                    window_buf[0] = c;
+                    window_len = 1;
+                }
+            }
+
+            // Append the decomposed codepoint to the current window.
+            if (using_overflow) {
+                try overflow.append(allocator, dcp);
+            } else if (window_len < norm_compose.WINDOW_BUF_SIZE) {
+                window_buf[window_len] = dcp;
+                window_len += 1;
+            } else {
+                // Fixed buffer exhausted -- move to dynamic allocation for this window.
+                try overflow.ensureTotalCapacity(allocator, norm_compose.WINDOW_BUF_SIZE + 16);
+                try overflow.appendSlice(allocator, window_buf[0..window_len]);
+                try overflow.append(allocator, dcp);
+                window_len = 0;
+                using_overflow = true;
+            }
+        }
+    }
+
+    // Flush the final window -- emit everything (emit_last=true).
+    var final_carry: ?Codepoint = null;
+    if (using_overflow) {
+        try norm_compose.flushWindow(overflow.items, should_compose, true, &result, allocator, &final_carry);
+    } else if (window_len > 0) {
+        try norm_compose.flushWindow(window_buf[0..window_len], should_compose, true, &result, allocator, &final_carry);
     }
 
     return result.toOwnedSlice(allocator);
 }
 
-/// Sorts combining marks by canonical combining class
-/// This implements canonical ordering per UAX #15
-fn sortByCombiningClass(codepoints: []Codepoint) void {
-    if (codepoints.len < 2) return;
-
-    // Find sequences of combining characters and sort them
-    var i: usize = 0;
-    while (i < codepoints.len) {
-        // Find a starter
-        if (getCombiningClass(codepoints[i]) == 0) {
-            // Found a starter, now find the end of the combining sequence
-            const seq_start = i + 1;
-            var seq_end = seq_start;
-            while (seq_end < codepoints.len and getCombiningClass(codepoints[seq_end]) != 0) {
-                seq_end += 1;
-            }
-
-            // Sort the combining sequence by CCC (stable sort)
-            if (seq_end > seq_start + 1) {
-                sortCombiningSequence(codepoints[seq_start..seq_end]);
-            }
-
-            i = seq_end;
-        } else {
-            i += 1;
-        }
-    }
-}
-
-/// Stable insertion sort for combining characters by CCC.
-/// Note: getCombiningClass is called per comparison rather than pre-computed into
-/// a parallel array. This is intentional -- combining sequences between starters
-/// are typically 1-5 elements, so the allocation overhead of a parallel CCC array
-/// would exceed the cost of repeated table lookups for these short runs.
-fn sortCombiningSequence(seq: []Codepoint) void {
-    if (seq.len < 2) return;
-
-    var i: usize = 1;
-    while (i < seq.len) : (i += 1) {
-        const key = seq[i];
-        const key_ccc = getCombiningClass(key);
-        var j: usize = i;
-
-        // Move elements with higher CCC forward (stable sort)
-        while (j > 0 and getCombiningClass(seq[j - 1]) > key_ccc) {
-            seq[j] = seq[j - 1];
-            j -= 1;
-        }
-        seq[j] = key;
-    }
-}
-
-test "combining class" {
-    const testing = std.testing;
-
-    try testing.expectEqual(@as(CombiningClass, 0), getCombiningClass('A'));
-    try testing.expectEqual(@as(CombiningClass, 230), getCombiningClass(0x0301)); // Combining acute
-    try testing.expect(isStarter('A'));
-    try testing.expect(!isStarter(0x0301));
-}
-
-test "decomposition" {
-    const testing = std.testing;
-
-    var buf: [4]Codepoint = undefined;
-
-    // Simple character
-    const simple = decompose('A', &buf);
-    try testing.expectEqual(@as(usize, 1), simple.len);
-    try testing.expectEqual(@as(Codepoint, 'A'), simple[0]);
-
-    // Precomposed character (e-acute)
-    const decomposed = decompose(0x00E9, &buf);
-    try testing.expectEqual(@as(usize, 2), decomposed.len);
-    try testing.expectEqual(@as(Codepoint, 0x0065), decomposed[0]); // e
-    try testing.expectEqual(@as(Codepoint, 0x0301), decomposed[1]); // combining acute
-}
-
-test "Hangul decomposition" {
-    const testing = std.testing;
-
-    var buf: [4]Codepoint = undefined;
-
-    // U+AC00 = U+1100 + U+1161
-    const ga = decompose(0xAC00, &buf);
-    try testing.expectEqual(@as(usize, 2), ga.len);
-    try testing.expectEqual(@as(Codepoint, 0x1100), ga[0]);
-    try testing.expectEqual(@as(Codepoint, 0x1161), ga[1]);
-
-    // U+D55C = U+1112 + U+1161 + U+11AB
-    const han = decompose(0xD55C, &buf);
-    try testing.expectEqual(@as(usize, 3), han.len);
-    try testing.expectEqual(@as(Codepoint, 0x1112), han[0]);
-    try testing.expectEqual(@as(Codepoint, 0x1161), han[1]);
-    try testing.expectEqual(@as(Codepoint, 0x11AB), han[2]);
-}
-
-test "composition lookup" {
-    const testing = std.testing;
-
-    // e + combining acute -> e-acute
-    try testing.expectEqual(@as(?Codepoint, 0x00E9), getComposite(0x0065, 0x0301));
-
-    // A + combining grave -> A-grave
-    try testing.expectEqual(@as(?Codepoint, 0x00C0), getComposite(0x0041, 0x0300));
-
-    // A + combining dot below -> A-dot-below (U+1EA0) - now using full UCD tables
-    try testing.expectEqual(@as(?Codepoint, 0x1EA0), getComposite(0x0041, 0x0323));
-
-    // No composite for A + combining double breve below (U+035C)
-    try testing.expectEqual(@as(?Codepoint, null), getComposite(0x0041, 0x035C));
-}
-
-test "Hangul composition" {
-    const testing = std.testing;
-
-    // U+1100 + U+1161 -> U+AC00
-    try testing.expectEqual(@as(?Codepoint, 0xAC00), getComposite(0x1100, 0x1161));
-
-    // U+AC00 + U+11AB -> U+AC04
-    try testing.expectEqual(@as(?Codepoint, 0xAC04), getComposite(0xAC00, 0x11AB));
-}
+// ============================================================================
+// Tests
+// ============================================================================
 
 test "NFC normalization: e + combining acute" {
     const testing = std.testing;
@@ -1032,4 +631,156 @@ test "isNormalized: NFKD detects compatibility decomposable characters" {
     // It should NOT be considered NFKD-normalized.
     const fullwidth_a = "\xEF\xBC\xA1"; // U+FF21
     try testing.expect(!isNormalized(fullwidth_a, .nfkd));
+}
+
+// ============================================================================
+// Streaming normalization tests (P2-3)
+// ============================================================================
+
+test "streaming: large input with many starter+combining windows" {
+    const testing = std.testing;
+
+    // Build a large input: 1000 repetitions of "a" + combining acute (NFC -> a-acute)
+    // This exercises the streaming path with many small windows.
+    const reps = 1000;
+    var input: [reps * 3]u8 = undefined;
+    var i: usize = 0;
+    for (0..reps) |_| {
+        input[i] = 'a'; // starter
+        input[i + 1] = 0xCC;
+        input[i + 2] = 0x81; // combining acute
+        i += 3;
+    }
+
+    const nfc = try normalize(testing.allocator, input[0..i], .nfc);
+    defer testing.allocator.free(nfc);
+
+    // Each a + combining acute should compose to a-acute (U+00E1, 2 bytes UTF-8)
+    try testing.expectEqual(@as(usize, reps * 2), nfc.len);
+
+    // Verify each composed character is a-acute
+    var j: usize = 0;
+    for (0..reps) |_| {
+        try testing.expectEqual(@as(u8, 0xC3), nfc[j]);
+        try testing.expectEqual(@as(u8, 0xA1), nfc[j + 1]);
+        j += 2;
+    }
+
+    // Also test NFD: should decompose each composed char back
+    const nfd = try normalize(testing.allocator, input[0..i], .nfd);
+    defer testing.allocator.free(nfd);
+    try testing.expectEqualSlices(u8, input[0..i], nfd);
+}
+
+test "streaming: mixed ASCII and combining marks" {
+    const testing = std.testing;
+
+    // "Hello" + e + combining acute + " World"
+    // The ASCII portions should pass through; the combining sequence should compose.
+    const input = "Hello e\xCC\x81 World";
+    const nfc = try normalize(testing.allocator, input, .nfc);
+    defer testing.allocator.free(nfc);
+
+    try testing.expectEqualSlices(u8, "Hello \xC3\xA9 World", nfc);
+}
+
+test "streaming: single codepoint input" {
+    const testing = std.testing;
+
+    // Single ASCII character
+    const result = try normalize(testing.allocator, "X", .nfc);
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "X", result);
+}
+
+test "streaming: input ending mid-CCC-sequence" {
+    const testing = std.testing;
+
+    // Input: a + combining acute + combining dot below (two combining marks, no trailing starter)
+    // CCC: acute=230, dot below=220. Canonical order is dot below first.
+    const input = "a\xCC\x81\xCC\xA3";
+    const nfd = try normalize(testing.allocator, input, .nfd);
+    defer testing.allocator.free(nfd);
+
+    // After CCC sort: a + dot below (220) + acute (230)
+    try testing.expectEqualSlices(u8, "a\xCC\xA3\xCC\x81", nfd);
+}
+
+test "streaming: input starting with combining marks (no initial starter)" {
+    const testing = std.testing;
+
+    // Combining acute at the start (orphan combining mark, CCC=230)
+    const input = "\xCC\x81" ++ "a";
+    const nfd = try normalize(testing.allocator, input, .nfd);
+    defer testing.allocator.free(nfd);
+
+    // The combining mark should be preserved, then the starter follows in a new window.
+    try testing.expectEqualSlices(u8, "\xCC\x81" ++ "a", nfd);
+}
+
+test "streaming: overflow path with >64 combining marks" {
+    const testing = std.testing;
+
+    // Build a pathological input: a starter followed by 70 combining marks.
+    // This exceeds WINDOW_BUF_SIZE (64) and exercises the dynamic fallback.
+    // Use combining acute (CCC 230, U+0301 = 0xCC 0x81) for all marks.
+    const num_marks = 70;
+    var input: [1 + num_marks * 2]u8 = undefined;
+    input[0] = 'a'; // starter
+    for (0..num_marks) |k| {
+        input[1 + k * 2] = 0xCC;
+        input[1 + k * 2 + 1] = 0x81;
+    }
+
+    const nfc = try normalize(testing.allocator, &input, .nfc);
+    defer testing.allocator.free(nfc);
+
+    // Since all combining marks have the same CCC (230) and compose with 'a'
+    // only once (only the first composes to a-acute, rest stay as combining acute),
+    // verify the output starts with a-acute followed by 69 combining acutes.
+    // a + first combining acute -> a-acute (0xC3 0xA1)
+    try testing.expectEqual(@as(u8, 0xC3), nfc[0]);
+    try testing.expectEqual(@as(u8, 0xA1), nfc[1]);
+
+    // Remaining 69 combining acutes
+    const expected_len = 2 + (num_marks - 1) * 2;
+    try testing.expectEqual(expected_len, nfc.len);
+
+    var pos: usize = 2;
+    for (0..num_marks - 1) |_| {
+        try testing.expectEqual(@as(u8, 0xCC), nfc[pos]);
+        try testing.expectEqual(@as(u8, 0x81), nfc[pos + 1]);
+        pos += 2;
+    }
+}
+
+test "streaming: multiple windows with CCC reordering" {
+    const testing = std.testing;
+
+    // Two windows, each requiring CCC reordering:
+    // Window 1: a + acute(230) + dot_below(220) -> sorted: a + dot_below(220) + acute(230)
+    // Window 2: b + acute(230) + dot_below(220) -> sorted: b + dot_below(220) + acute(230)
+    const input = "a\xCC\x81\xCC\xA3" ++ "b\xCC\x81\xCC\xA3";
+    const nfd = try normalize(testing.allocator, input, .nfd);
+    defer testing.allocator.free(nfd);
+
+    const expected = "a\xCC\xA3\xCC\x81" ++ "b\xCC\xA3\xCC\x81";
+    try testing.expectEqualSlices(u8, expected, nfd);
+}
+
+test "streaming: Hangul decomposition and composition windows" {
+    const testing = std.testing;
+
+    // U+AC00 (ga) decomposes to U+1100 + U+1161.
+    // In NFC, it should recompose back to U+AC00.
+    const input = "\xEA\xB0\x80"; // U+AC00
+    const nfc = try normalize(testing.allocator, input, .nfc);
+    defer testing.allocator.free(nfc);
+    try testing.expectEqualSlices(u8, "\xEA\xB0\x80", nfc);
+
+    // NFD should decompose to Jamo
+    const nfd = try normalize(testing.allocator, input, .nfd);
+    defer testing.allocator.free(nfd);
+    // U+1100 = E1 84 80, U+1161 = E1 85 A1
+    try testing.expectEqualSlices(u8, "\xE1\x84\x80\xE1\x85\xA1", nfd);
 }

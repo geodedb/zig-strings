@@ -443,228 +443,33 @@ fn getCurrencyFormat(currency: Currency, locale: LocaleId) CurrencyFormat {
 }
 
 // ============================================================
-// Predefined Locales
+// Predefined Locales (imported from locale_data.zig)
 // ============================================================
 
-const root_locale = Locale{
-    .id = .root,
-    .language = "",
-    .region = "",
-    .number = .{},
-    .date = .{ .short = "yyyy-MM-dd", .medium = "yyyy-MM-dd", .long = "yyyy-MM-dd", .full = "yyyy-MM-dd" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss", .hour_24 = true, .am = "AM", .pm = "PM" },
-    .list = .{},
-};
+const locale_data = @import("locale_data.zig");
 
-const en_US = Locale{
-    .id = .en_US,
-    .language = "en",
-    .region = "US",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "M/d/yy", .medium = "MMM d, yyyy", .long = "MMMM d, yyyy", .full = "EEEE, MMMM d, yyyy" },
-    .time = .{ .short = "h:mm a", .medium = "h:mm:ss a", .long = "h:mm:ss a z", .hour_24 = false, .am = "AM", .pm = "PM" },
-    .list = .{ .separator = ", ", .last_separator = ", and ", .pair_separator = " and " },
-};
-
-const en_GB = Locale{
-    .id = .en_GB,
-    .language = "en",
-    .region = "GB",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "dd/MM/yyyy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE, d MMMM yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "am", .pm = "pm" },
-    .list = .{ .separator = ", ", .last_separator = " and ", .pair_separator = " and " },
-};
-
-const en_AU = Locale{
-    .id = .en_AU,
-    .language = "en",
-    .region = "AU",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "d/M/yy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE, d MMMM yyyy" },
-    .time = .{ .short = "h:mm a", .medium = "h:mm:ss a", .long = "h:mm:ss a z", .hour_24 = false, .am = "am", .pm = "pm" },
-    .list = .{ .separator = ", ", .last_separator = " and ", .pair_separator = " and " },
-};
-
-const en_CA = Locale{
-    .id = .en_CA,
-    .language = "en",
-    .region = "CA",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "yyyy-MM-dd", .medium = "MMM d, yyyy", .long = "MMMM d, yyyy", .full = "EEEE, MMMM d, yyyy" },
-    .time = .{ .short = "h:mm a", .medium = "h:mm:ss a", .long = "h:mm:ss a z", .hour_24 = false, .am = "a.m.", .pm = "p.m." },
-    .list = .{ .separator = ", ", .last_separator = ", and ", .pair_separator = " and " },
-};
-
-const de_DE = Locale{
-    .id = .de_DE,
-    .language = "de",
-    .region = "DE",
-    .number = .{ .decimal_sep = ',', .group_sep = '.' },
-    .date = .{ .short = "dd.MM.yy", .medium = "dd.MM.yyyy", .long = "d. MMMM yyyy", .full = "EEEE, d. MMMM yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " und ", .pair_separator = " und " },
-};
-
-const fr_FR = Locale{
-    .id = .fr_FR,
-    .language = "fr",
-    .region = "FR",
-    .number = .{ .decimal_sep = ',', .group_sep = ' ' },
-    .date = .{ .short = "dd/MM/yyyy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE d MMMM yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " et ", .pair_separator = " et " },
-};
-
-const es_ES = Locale{
-    .id = .es_ES,
-    .language = "es",
-    .region = "ES",
-    .number = .{ .decimal_sep = ',', .group_sep = '.' },
-    .date = .{ .short = "d/M/yy", .medium = "d MMM yyyy", .long = "d 'de' MMMM 'de' yyyy", .full = "EEEE, d 'de' MMMM 'de' yyyy" },
-    .time = .{ .short = "H:mm", .medium = "H:mm:ss", .long = "H:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " y ", .pair_separator = " y " },
-};
-
-const it_IT = Locale{
-    .id = .it_IT,
-    .language = "it",
-    .region = "IT",
-    .number = .{ .decimal_sep = ',', .group_sep = '.' },
-    .date = .{ .short = "dd/MM/yy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE d MMMM yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " e ", .pair_separator = " e " },
-};
-
-const pt_BR = Locale{
-    .id = .pt_BR,
-    .language = "pt",
-    .region = "BR",
-    .number = .{ .decimal_sep = ',', .group_sep = '.' },
-    .date = .{ .short = "dd/MM/yyyy", .medium = "d 'de' MMM 'de' yyyy", .long = "d 'de' MMMM 'de' yyyy", .full = "EEEE, d 'de' MMMM 'de' yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " e ", .pair_separator = " e " },
-};
-
-const pt_PT = Locale{
-    .id = .pt_PT,
-    .language = "pt",
-    .region = "PT",
-    .number = .{ .decimal_sep = ',', .group_sep = ' ' },
-    .date = .{ .short = "dd/MM/yyyy", .medium = "d 'de' MMM 'de' yyyy", .long = "d 'de' MMMM 'de' yyyy", .full = "EEEE, d 'de' MMMM 'de' yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " e ", .pair_separator = " e " },
-};
-
-const nl_NL = Locale{
-    .id = .nl_NL,
-    .language = "nl",
-    .region = "NL",
-    .number = .{ .decimal_sep = ',', .group_sep = '.' },
-    .date = .{ .short = "d-M-yy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE d MMMM yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " en ", .pair_separator = " en " },
-};
-
-const pl_PL = Locale{
-    .id = .pl_PL,
-    .language = "pl",
-    .region = "PL",
-    .number = .{ .decimal_sep = ',', .group_sep = ' ' },
-    .date = .{ .short = "dd.MM.yyyy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE, d MMMM yyyy" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " i ", .pair_separator = " i " },
-};
-
-const ru_RU = Locale{
-    .id = .ru_RU,
-    .language = "ru",
-    .region = "RU",
-    .number = .{ .decimal_sep = ',', .group_sep = ' ' },
-    .date = .{ .short = "dd.MM.yy", .medium = "d MMM yyyy", .long = "d MMMM yyyy 'г.'", .full = "EEEE, d MMMM yyyy 'г.'" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " и ", .pair_separator = " и " },
-};
-
-const zh_CN = Locale{
-    .id = .zh_CN,
-    .language = "zh",
-    .region = "CN",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "yyyy/M/d", .medium = "yyyy年M月d日", .long = "yyyy年M月d日", .full = "yyyy年M月d日EEEE" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "z HH:mm:ss", .hour_24 = true, .am = "上午", .pm = "下午" },
-    .list = .{ .separator = "、", .last_separator = "和", .pair_separator = "和" },
-};
-
-const zh_TW = Locale{
-    .id = .zh_TW,
-    .language = "zh",
-    .region = "TW",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "yyyy/M/d", .medium = "yyyy年M月d日", .long = "yyyy年M月d日", .full = "yyyy年M月d日 EEEE" },
-    .time = .{ .short = "ah:mm", .medium = "ah:mm:ss", .long = "z ah:mm:ss", .hour_24 = false, .am = "上午", .pm = "下午" },
-    .list = .{ .separator = "、", .last_separator = "和", .pair_separator = "和" },
-};
-
-const ja_JP = Locale{
-    .id = .ja_JP,
-    .language = "ja",
-    .region = "JP",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "yyyy/MM/dd", .medium = "yyyy年M月d日", .long = "yyyy年M月d日", .full = "yyyy年M月d日EEEE" },
-    .time = .{ .short = "H:mm", .medium = "H:mm:ss", .long = "H:mm:ss z", .hour_24 = true, .am = "午前", .pm = "午後" },
-    .list = .{ .separator = "、", .last_separator = "、", .pair_separator = "と" },
-};
-
-const ko_KR = Locale{
-    .id = .ko_KR,
-    .language = "ko",
-    .region = "KR",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "yy. M. d.", .medium = "yyyy. M. d.", .long = "yyyy년 M월 d일", .full = "yyyy년 M월 d일 EEEE" },
-    .time = .{ .short = "a h:mm", .medium = "a h:mm:ss", .long = "a h시 m분 s초 z", .hour_24 = false, .am = "오전", .pm = "오후" },
-    .list = .{ .separator = ", ", .last_separator = " 및 ", .pair_separator = " 및 " },
-};
-
-const ar_SA = Locale{
-    .id = .ar_SA,
-    .language = "ar",
-    .region = "SA",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "d/M/yy", .medium = "dd/MM/yyyy", .long = "d MMMM yyyy", .full = "EEEE، d MMMM yyyy" },
-    .time = .{ .short = "h:mm a", .medium = "h:mm:ss a", .long = "h:mm:ss a z", .hour_24 = false, .am = "ص", .pm = "م" },
-    .list = .{ .separator = "، ", .last_separator = "، و", .pair_separator = " و" },
-};
-
-const he_IL = Locale{
-    .id = .he_IL,
-    .language = "he",
-    .region = "IL",
-    .number = .{ .decimal_sep = '.', .group_sep = ',' },
-    .date = .{ .short = "d.M.yyyy", .medium = "d בMMM yyyy", .long = "d בMMMM yyyy", .full = "EEEE, d בMMMM yyyy" },
-    .time = .{ .short = "H:mm", .medium = "H:mm:ss", .long = "H:mm:ss z", .hour_24 = true, .am = "", .pm = "" },
-    .list = .{ .separator = ", ", .last_separator = " ו", .pair_separator = " ו" },
-};
-
-const hi_IN = Locale{
-    .id = .hi_IN,
-    .language = "hi",
-    .region = "IN",
-    .number = .{ .decimal_sep = '.', .group_sep = ',', .group_size = 2 },
-    .date = .{ .short = "d/M/yy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "EEEE, d MMMM yyyy" },
-    .time = .{ .short = "h:mm a", .medium = "h:mm:ss a", .long = "h:mm:ss a z", .hour_24 = false, .am = "पूर्वाह्न", .pm = "अपराह्न" },
-    .list = .{ .separator = ", ", .last_separator = ", और ", .pair_separator = " और " },
-};
-
-const tr_TR = Locale{
-    .id = .tr_TR,
-    .language = "tr",
-    .region = "TR",
-    .number = .{ .decimal_sep = ',', .group_sep = '.' },
-    .date = .{ .short = "d.MM.yyyy", .medium = "d MMM yyyy", .long = "d MMMM yyyy", .full = "d MMMM yyyy EEEE" },
-    .time = .{ .short = "HH:mm", .medium = "HH:mm:ss", .long = "HH:mm:ss z", .hour_24 = true, .am = "ÖÖ", .pm = "ÖS" },
-    .list = .{ .separator = ", ", .last_separator = " ve ", .pair_separator = " ve " },
-};
+const root_locale = locale_data.root_locale;
+const en_US = locale_data.en_US;
+const en_GB = locale_data.en_GB;
+const en_AU = locale_data.en_AU;
+const en_CA = locale_data.en_CA;
+const de_DE = locale_data.de_DE;
+const fr_FR = locale_data.fr_FR;
+const es_ES = locale_data.es_ES;
+const it_IT = locale_data.it_IT;
+const pt_BR = locale_data.pt_BR;
+const pt_PT = locale_data.pt_PT;
+const nl_NL = locale_data.nl_NL;
+const pl_PL = locale_data.pl_PL;
+const ru_RU = locale_data.ru_RU;
+const zh_CN = locale_data.zh_CN;
+const zh_TW = locale_data.zh_TW;
+const ja_JP = locale_data.ja_JP;
+const ko_KR = locale_data.ko_KR;
+const ar_SA = locale_data.ar_SA;
+const he_IL = locale_data.he_IL;
+const hi_IN = locale_data.hi_IN;
+const tr_TR = locale_data.tr_TR;
 
 // ============================================================
 // Tests

@@ -51,6 +51,7 @@ pub const DoubleMetaphoneResult = struct {
     primary: []const u8,
     alternate: ?[]const u8,
 
+    /// Frees the primary and alternate code strings.
     pub fn deinit(self: *DoubleMetaphoneResult, allocator: std.mem.Allocator) void {
         allocator.free(self.primary);
         if (self.alternate) |alt| {
@@ -583,6 +584,15 @@ pub fn caverphone(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 /// Check if two strings match phonetically using the specified algorithm.
+///
+/// Only `.soundex` is supported in the non-allocating path.
+/// For other algorithms (`.refined_soundex`, `.metaphone`,
+/// `.double_metaphone`, `.nysiis`, `.match_rating`, `.caverphone`),
+/// use `phoneticMatchAlloc` which accepts an allocator.
+///
+/// Passing an unsupported algorithm to this function is a
+/// programming error and will trigger a safety-checked unreachable
+/// in safe builds (undefined behavior in unsafe/release builds).
 pub fn phoneticMatch(a: []const u8, b: []const u8, algo: Algorithm) bool {
     return switch (algo) {
         .soundex => {
@@ -590,13 +600,7 @@ pub fn phoneticMatch(a: []const u8, b: []const u8, algo: Algorithm) bool {
             const code_b = soundex(b);
             return std.mem.eql(u8, &code_a, &code_b);
         },
-        else => {
-            // For other algorithms, would need allocator
-            // Fallback to soundex for simple comparison
-            const code_a = soundex(a);
-            const code_b = soundex(b);
-            return std.mem.eql(u8, &code_a, &code_b);
-        },
+        else => unreachable, // Use phoneticMatchAlloc for non-soundex algorithms
     };
 }
 
@@ -774,4 +778,55 @@ test "Refined Soundex" {
     defer testing.allocator.free(r1);
     try testing.expect(r1.len > 0);
     try testing.expect(r1[0] == 'R');
+}
+
+test "phoneticMatchAlloc soundex" {
+    const testing = std.testing;
+
+    // soundex path through phoneticMatchAlloc
+    try testing.expect(try phoneticMatchAlloc(testing.allocator, "Smith", "Smyth", .soundex));
+    try testing.expect(!try phoneticMatchAlloc(testing.allocator, "Smith", "Jones", .soundex));
+}
+
+test "phoneticMatchAlloc refined_soundex" {
+    const testing = std.testing;
+
+    // Same-sounding names via refined_soundex
+    const match = try phoneticMatchAlloc(testing.allocator, "Robert", "Robert", .refined_soundex);
+    try testing.expect(match);
+
+    const no_match = try phoneticMatchAlloc(testing.allocator, "Robert", "Jones", .refined_soundex);
+    try testing.expect(!no_match);
+}
+
+test "phoneticMatchAlloc metaphone" {
+    const testing = std.testing;
+
+    // "Knight" and "Night" produce the same Metaphone code "NT"
+    try testing.expect(try phoneticMatchAlloc(testing.allocator, "Knight", "Night", .metaphone));
+    try testing.expect(!try phoneticMatchAlloc(testing.allocator, "Knight", "Day", .metaphone));
+}
+
+test "phoneticMatchAlloc double_metaphone" {
+    const testing = std.testing;
+
+    try testing.expect(try phoneticMatchAlloc(testing.allocator, "Schmidt", "Schmidt", .double_metaphone));
+}
+
+test "phoneticMatchAlloc nysiis" {
+    const testing = std.testing;
+
+    try testing.expect(try phoneticMatchAlloc(testing.allocator, "Macintosh", "Macintosh", .nysiis));
+}
+
+test "phoneticMatchAlloc match_rating" {
+    const testing = std.testing;
+
+    try testing.expect(try phoneticMatchAlloc(testing.allocator, "Catherine", "Catherine", .match_rating));
+}
+
+test "phoneticMatchAlloc caverphone" {
+    const testing = std.testing;
+
+    try testing.expect(try phoneticMatchAlloc(testing.allocator, "Thompson", "Thompson", .caverphone));
 }

@@ -32,13 +32,10 @@
 //! ```
 
 const std = @import("std");
+const legacy_errors = @import("legacy_encoding_errors");
 
 /// Encoding/decoding errors
-pub const ISO8859Error = error{
-    InvalidSequence,
-    UnmappableCharacter,
-    OutOfMemory,
-};
+pub const ISO8859Error = legacy_errors.LegacyEncodingError;
 
 /// ISO-8859 encoding variants
 pub const ISO8859 = enum {

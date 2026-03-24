@@ -164,10 +164,12 @@ pub const Iterator = struct {
     bytes: []const u8,
     index: usize,
 
+    /// Creates a new Latin-1 iterator over the given bytes.
     pub fn init(bytes: []const u8) Iterator {
         return .{ .bytes = bytes, .index = 0 };
     }
 
+    /// Returns the next code point, or null when the input is exhausted.
     pub fn next(self: *Iterator) ?Codepoint {
         if (self.index >= self.bytes.len) {
             return null;
@@ -177,6 +179,7 @@ pub const Iterator = struct {
         return cp;
     }
 
+    /// Returns the current code point without advancing the iterator.
     pub fn peek(self: *const Iterator) ?Codepoint {
         if (self.index >= self.bytes.len) {
             return null;
@@ -184,6 +187,7 @@ pub const Iterator = struct {
         return decode(self.bytes[self.index]);
     }
 
+    /// Resets the iterator to the beginning of the input.
     pub fn reset(self: *Iterator) void {
         self.index = 0;
     }

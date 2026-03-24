@@ -134,6 +134,8 @@ pub fn classifyIdentifier(text: []const u8) IdentifierType {
 pub fn findIdentifiers(allocator: std.mem.Allocator, text: []const u8) ![][]const u8 {
     var identifiers: std.ArrayList([]const u8) = .empty;
     errdefer identifiers.deinit(allocator);
+    // Heuristic: assume roughly 1 identifier per 8 bytes of text.
+    try identifiers.ensureTotalCapacity(allocator, if (text.len > 0) text.len / 8 + 1 else 1);
 
     var pos: usize = 0;
     while (pos < text.len) {

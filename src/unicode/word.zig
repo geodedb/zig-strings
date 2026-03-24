@@ -279,6 +279,7 @@ pub const Iterator = struct {
     index: usize,
     state: WordState,
 
+    /// Creates a new word boundary iterator over the given UTF-8 bytes.
     pub fn init(bytes: []const u8) Iterator {
         return .{
             .bytes = bytes,

@@ -16,6 +16,7 @@
 //! EUC-JP is commonly used in Unix/Linux environments.
 
 const std = @import("std");
+const legacy_errors = @import("legacy_encoding_errors");
 
 /// Japanese encoding variants
 pub const JapaneseEncoding = enum {
@@ -48,11 +49,7 @@ pub const JapaneseEncoding = enum {
 };
 
 /// Errors that can occur during encoding/decoding
-pub const EncodingError = error{
-    InvalidSequence,
-    UnmappableCharacter,
-    OutOfMemory,
-};
+pub const EncodingError = legacy_errors.LegacyEncodingError;
 
 // ============================================================================
 // Shift_JIS Implementation

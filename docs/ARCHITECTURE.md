@@ -83,9 +83,9 @@ Performance and convenience utilities:
 
 ## Design Principles
 
-### 1. Pure Zig, Zero Dependencies
+### 1. Pure Zig, Minimal Dependencies
 
-The library is implemented entirely in Zig with no external dependencies. All Unicode data and algorithms are self-contained.
+The library is implemented in Zig with all Unicode data and algorithms self-contained. The only external dependency is [spice](https://gitlab.com/devnw/zig/spice), which provides optional parallelism support and is controlled by the `-Dspice=true/false` build flag (enabled by default).
 
 ### 2. UTF-8 First
 
@@ -133,15 +133,18 @@ The library implements key Unicode algorithms:
 
 - All functions are thread-safe when operating on different data
 - String types are not internally synchronized
-- StringPool uses internal synchronization
+- StringPool is NOT thread-safe; callers must provide external synchronization
 
 ## Platform Support
 
-The library supports all platforms supported by Zig:
+Primary supported platforms:
 
 - Linux (x86_64, aarch64, arm, riscv64, etc.)
 - macOS (x86_64, aarch64)
 - Windows (x86_64, aarch64)
+
+Planned/untested platforms (may work but not yet verified):
+
 - FreeBSD, NetBSD, OpenBSD
 - WebAssembly
 

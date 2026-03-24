@@ -71,7 +71,7 @@ test-release-small:
 # =============================================================================
 
 fmt:
-	zig fmt src/ tests/ build.zig
+	zig fmt src/ tests/ bench/ examples/ build.zig
 
 fmt-check:
 	zig build fmt-check

@@ -287,9 +287,10 @@ pub const Locale = struct {
     }
 
     /// Format date (simple implementation).
-    /// Note: Currently outputs MM/DD/YY format regardless of locale.
-    /// Locale-aware date formatting is not yet implemented.
-    /// The `self` (locale) parameter is currently unused.
+    /// Note: Currently returns English-only formatting regardless of locale.
+    /// Locale-specific date formatting is not yet implemented.
+    /// The `self` (locale) parameter is accepted for API forward-compatibility
+    /// but is currently unused.
     pub fn formatDate(
         self: Locale,
         allocator: std.mem.Allocator,
@@ -408,6 +409,13 @@ fn formatNumberWithOpts(allocator: std.mem.Allocator, value: f64, opts: NumberFo
     return result.toOwnedSlice(allocator);
 }
 
+/// Returns the currency format (symbol, placement, decimal places) for the
+/// given currency code.
+///
+/// Note: Currently returns English-only formatting regardless of locale.
+/// Locale-specific currency formatting (e.g., symbol placement, grouping)
+/// is not yet implemented. The `locale` parameter is accepted for API
+/// forward-compatibility but is currently unused.
 fn getCurrencyFormat(currency: Currency, locale: LocaleId) CurrencyFormat {
     _ = locale;
     return switch (currency) {

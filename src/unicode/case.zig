@@ -10,6 +10,7 @@ const std = @import("std");
 const types = @import("types");
 const codepoint_mod = @import("codepoint");
 const categories = @import("categories");
+const simd = @import("simd");
 
 pub const Codepoint = types.Codepoint;
 pub const CaseType = types.CaseType;
@@ -152,7 +153,16 @@ pub fn toTitle(cp: Codepoint) Codepoint {
     return toUpper(cp);
 }
 
-/// Case folds a code point for case-insensitive comparison
+/// Case folds a code point for case-insensitive comparison.
+///
+/// Note: German sharp s (U+00DF) is simplified to single 's' instead of "ss".
+/// Full case folding of sharp s requires a one-to-many mapping (one codepoint
+/// to two codepoints: 's' + 's'), which cannot be expressed in a single
+/// Codepoint return value. This may cause incorrect results in
+/// case-insensitive comparisons involving sharp s (e.g., "strasse" vs
+/// "stra\u{00DF}e" will NOT compare as equal via codepoint-level folding).
+/// Functions that depend on this (e.g., `equalsIgnoreCase`, `compareIgnoreCase`)
+/// inherit the same limitation.
 pub fn caseFold(cp: Codepoint) Codepoint {
     // Simple case folding is mostly the same as toLower with some exceptions
 
@@ -180,20 +190,11 @@ pub fn equalsCaseFold(a: Codepoint, b: Codepoint) bool {
 
 /// Converts a UTF-8 string to lowercase
 pub fn toLowerString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
-    // ASCII fast-path: when all bytes are < 0x80, we can convert directly
-    // without UTF-8 codepoint decoding overhead.
-    var all_ascii = true;
-    for (utf8) |b| {
-        if (b >= 0x80) {
-            all_ascii = false;
-            break;
-        }
-    }
-    if (all_ascii) {
+    // SIMD-accelerated ASCII fast-path: use vectorized check and conversion
+    // when all bytes are < 0x80, avoiding UTF-8 codepoint decoding overhead.
+    if (simd.isAllAscii(utf8)) {
         const result = try allocator.alloc(u8, utf8.len);
-        for (utf8, 0..) |b, i| {
-            result[i] = if (b >= 'A' and b <= 'Z') b + 32 else b;
-        }
+        simd.toLowerAscii(result, utf8);
         return result;
     }
 
@@ -215,20 +216,11 @@ pub fn toLowerString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
 
 /// Converts a UTF-8 string to uppercase
 pub fn toUpperString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
-    // ASCII fast-path: when all bytes are < 0x80, we can convert directly
-    // without UTF-8 codepoint decoding overhead.
-    var all_ascii = true;
-    for (utf8) |b| {
-        if (b >= 0x80) {
-            all_ascii = false;
-            break;
-        }
-    }
-    if (all_ascii) {
+    // SIMD-accelerated ASCII fast-path: use vectorized check and conversion
+    // when all bytes are < 0x80, avoiding UTF-8 codepoint decoding overhead.
+    if (simd.isAllAscii(utf8)) {
         const result = try allocator.alloc(u8, utf8.len);
-        for (utf8, 0..) |b, i| {
-            result[i] = if (b >= 'a' and b <= 'z') b - 32 else b;
-        }
+        simd.toUpperAscii(result, utf8);
         return result;
     }
 
@@ -443,4 +435,68 @@ test "toUpperString ASCII fast-path" {
     const r6 = try toUpperString(testing.allocator, "caf\xc3\xa9");
     defer testing.allocator.free(r6);
     try testing.expectEqualSlices(u8, "CAF\xc3\x89", r6);
+}
+
+test "toLowerString SIMD fast-path with large ASCII input" {
+    const testing = std.testing;
+
+    // 128 bytes of ASCII uppercase - large enough to exercise SIMD vector paths
+    const input = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++ "AB";
+    const expected = "abcdefghijklmnopqrstuvwxyz" ++ "abcdefghijklmnopqrstuvwxyz" ++
+        "abcdefghijklmnopqrstuvwxyz" ++ "abcdefghijklmnopqrstuvwxyz" ++
+        "abcdefghijklmnopqrstuvwxyz" ++ "ab";
+
+    try testing.expectEqual(@as(usize, 132), input.len);
+
+    const result = try toLowerString(testing.allocator, input);
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, expected, result);
+
+    // Mixed case large ASCII input
+    const mixed = "Hello World! This Is A Long ASCII String That Should Trigger SIMD Processing In The Fast Path 1234567890!!";
+    const mixed_lower = "hello world! this is a long ascii string that should trigger simd processing in the fast path 1234567890!!";
+
+    const r2 = try toLowerString(testing.allocator, mixed);
+    defer testing.allocator.free(r2);
+    try testing.expectEqualSlices(u8, mixed_lower, r2);
+}
+
+test "toUpperString SIMD fast-path with large ASCII input" {
+    const testing = std.testing;
+
+    // 128 bytes of ASCII lowercase - large enough to exercise SIMD vector paths
+    const input = "abcdefghijklmnopqrstuvwxyz" ++ "abcdefghijklmnopqrstuvwxyz" ++
+        "abcdefghijklmnopqrstuvwxyz" ++ "abcdefghijklmnopqrstuvwxyz" ++
+        "abcdefghijklmnopqrstuvwxyz" ++ "ab";
+    const expected = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++ "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++ "AB";
+
+    try testing.expectEqual(@as(usize, 132), input.len);
+
+    const result = try toUpperString(testing.allocator, input);
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, expected, result);
+
+    // Mixed case large ASCII input
+    const mixed = "Hello World! This Is A Long ASCII String That Should Trigger SIMD Processing In The Fast Path 1234567890!!";
+    const mixed_upper = "HELLO WORLD! THIS IS A LONG ASCII STRING THAT SHOULD TRIGGER SIMD PROCESSING IN THE FAST PATH 1234567890!!";
+
+    const r2 = try toUpperString(testing.allocator, mixed);
+    defer testing.allocator.free(r2);
+    try testing.expectEqualSlices(u8, mixed_upper, r2);
+}
+
+test "SIMD integration: isAllAscii correctly detects non-ASCII" {
+    const testing = std.testing;
+
+    // Verify that non-ASCII input correctly falls through to Unicode path
+    // This tests the simd.isAllAscii integration point
+    const non_ascii = "Hello \xc3\xa9 World with non-ASCII that is long enough to potentially trigger SIMD checks if it were ASCII!!";
+    const lower = try toLowerString(testing.allocator, non_ascii);
+    defer testing.allocator.free(lower);
+    // The \xc3\xa9 is e-acute (U+00E9), already lowercase
+    try testing.expectEqualSlices(u8, "hello \xc3\xa9 world with non-ascii that is long enough to potentially trigger simd checks if it were ascii!!", lower);
 }

@@ -346,6 +346,7 @@ pub const LineIterator = struct {
 
     const Self = @This();
 
+    /// Creates a line iterator over the given memory-mapped data.
     pub fn init(data: []const u8) Self {
         return Self{
             .data = data,
@@ -353,6 +354,7 @@ pub const LineIterator = struct {
         };
     }
 
+    /// Returns the next line (excluding line terminators), or null when exhausted.
     pub fn next(self: *Self) ?[]const u8 {
         if (self.pos >= self.data.len) return null;
 
@@ -379,6 +381,7 @@ pub const LineIterator = struct {
         return self.data[start..end];
     }
 
+    /// Resets the iterator to the beginning of the data.
     pub fn reset(self: *Self) void {
         self.pos = 0;
     }
@@ -391,6 +394,7 @@ pub const MappedStringPool = struct {
 
     const Self = @This();
 
+    /// Creates an empty pool with the given allocator.
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .mappings = std.ArrayList(MappedString).init(allocator),
@@ -398,6 +402,7 @@ pub const MappedStringPool = struct {
         };
     }
 
+    /// Closes all memory mappings and frees the pool.
     pub fn deinit(self: *Self) void {
         for (self.mappings.items) |*mapping| {
             mapping.close();

@@ -101,6 +101,7 @@ pub const Iterator = struct {
     units: []const u16,
     index: usize,
 
+    /// Creates a new UTF-16 iterator over the given code units.
     pub fn init(units: []const u16) Iterator {
         return .{ .units = units, .index = 0 };
     }

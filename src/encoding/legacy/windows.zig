@@ -28,13 +28,10 @@
 //! ```
 
 const std = @import("std");
+const legacy_errors = @import("legacy_encoding_errors");
 
 /// Encoding/decoding errors
-pub const CodePageError = error{
-    InvalidSequence,
-    UnmappableCharacter,
-    OutOfMemory,
-};
+pub const CodePageError = legacy_errors.LegacyEncodingError;
 
 /// Windows Code Page identifier
 pub const CodePage = enum {

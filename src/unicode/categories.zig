@@ -581,7 +581,17 @@ fn getAsciiCategory(cp: Codepoint) GeneralCategory {
     return switch (cp) {
         0x00...0x1F => .Cc, // Control characters
         0x20 => .Zs, // Space
-        '!'...'/' => .Po, // Punctuation
+        '!'...'#' => .Po, // Punctuation (! " #)
+        '$' => .Sc, // Currency symbol
+        '%'...'&' => .Po, // Punctuation (% &)
+        '\'' => .Po, // Apostrophe
+        '(' => .Ps, // Open parenthesis
+        ')' => .Pe, // Close parenthesis
+        '*' => .Po, // Asterisk
+        '+' => .Sm, // Math symbol (plus)
+        ',' => .Po, // Comma
+        '-' => .Pd, // Dash punctuation
+        '.'...'/' => .Po, // Punctuation (. /)
         '0'...'9' => .Nd, // Digits
         ':'...';' => .Po,
         '<'...'>' => .Sm, // Math symbols
@@ -811,4 +821,27 @@ test "CJK detection" {
     try testing.expect(isCjkIdeograph(0x6587)); // 文
     try testing.expect(!isCjkIdeograph('A'));
     try testing.expect(!isCjkIdeograph(0x3042)); // Hiragana あ
+}
+
+test "getAsciiCategory correctly classifies ASCII punctuation" {
+    const testing = std.testing;
+
+    // Verify the 5 characters that were previously misclassified as .Po
+    try testing.expectEqual(GeneralCategory.Sc, getAsciiCategory('$'));
+    try testing.expectEqual(GeneralCategory.Ps, getAsciiCategory('('));
+    try testing.expectEqual(GeneralCategory.Pe, getAsciiCategory(')'));
+    try testing.expectEqual(GeneralCategory.Sm, getAsciiCategory('+'));
+    try testing.expectEqual(GeneralCategory.Pd, getAsciiCategory('-'));
+
+    // Verify remaining chars in the old '!'...'/' range are still .Po
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('!'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('"'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('#'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('%'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('&'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('\''));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('*'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory(','));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('.'));
+    try testing.expectEqual(GeneralCategory.Po, getAsciiCategory('/'));
 }

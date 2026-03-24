@@ -14,6 +14,7 @@
 //! CP949 extends EUC-KR to cover all 11,172 precomposed Hangul syllables.
 
 const std = @import("std");
+const legacy_errors = @import("legacy_encoding_errors");
 
 /// Korean encoding variants
 pub const KoreanEncoding = enum {
@@ -46,11 +47,7 @@ pub const KoreanEncoding = enum {
 };
 
 /// Errors that can occur during encoding/decoding
-pub const EncodingError = error{
-    InvalidSequence,
-    UnmappableCharacter,
-    OutOfMemory,
-};
+pub const EncodingError = legacy_errors.LegacyEncodingError;
 
 // ============================================================================
 // EUC-KR Implementation

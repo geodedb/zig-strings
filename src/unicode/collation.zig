@@ -5,6 +5,12 @@
 //!
 //! This module provides Unicode Collation Algorithm (UCA) support for
 //! locale-aware string comparison and sorting.
+//!
+//! Note: This is a simplified collation implementation covering ASCII and
+//! Latin-1 characters only. Non-Latin text (e.g., CJK, Arabic, Cyrillic
+//! beyond basic mappings) falls back to raw codepoint ordering rather than
+//! proper DUCET (Default Unicode Collation Element Table) weights. This is
+//! not a complete UTS #10 implementation.
 
 const std = @import("std");
 const types = @import("types");
@@ -227,12 +233,17 @@ pub fn getSortKey(allocator: std.mem.Allocator, str: []const u8, options: Collat
     const need_tertiary = @intFromEnum(strength) >= @intFromEnum(Strength.tertiary);
 
     // Single pass: collect all weight levels simultaneously
+    // Pre-allocate based on input byte length as upper-bound estimate of codepoint count.
+    // Primary weights use 2 bytes per codepoint; secondary and tertiary use 1 byte each.
     var primary_weights: std.ArrayList(u8) = .empty;
     defer primary_weights.deinit(allocator);
+    try primary_weights.ensureTotalCapacity(allocator, str.len * 2);
     var secondary_weights: std.ArrayList(u8) = .empty;
     defer secondary_weights.deinit(allocator);
+    if (need_secondary) try secondary_weights.ensureTotalCapacity(allocator, str.len);
     var tertiary_weights: std.ArrayList(u8) = .empty;
     defer tertiary_weights.deinit(allocator);
+    if (need_tertiary) try tertiary_weights.ensureTotalCapacity(allocator, str.len);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = str, .i = 0 };
     while (iter.nextCodepoint()) |cp| {

@@ -193,6 +193,8 @@ pub fn containsBidiOverrides(text: []const u8) bool {
 pub fn stripBidiOverrides(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     var result: std.ArrayListUnmanaged(u8) = .{};
     errdefer result.deinit(allocator);
+    // Most characters are kept; pre-allocate for the full input length.
+    try result.ensureTotalCapacity(allocator, text.len);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
     var prev_i: usize = 0;
@@ -241,6 +243,8 @@ pub const BidiRun = struct {
 pub fn detectRuns(allocator: std.mem.Allocator, text: []const u8) ![]BidiRun {
     var runs: std.ArrayList(BidiRun) = .empty;
     errdefer runs.deinit(allocator);
+    // Heuristic: most text has few direction changes; allocate a modest amount.
+    try runs.ensureTotalCapacity(allocator, if (text.len > 0) text.len / 16 + 1 else 1);
 
     if (text.len == 0) return runs.toOwnedSlice(allocator);
 

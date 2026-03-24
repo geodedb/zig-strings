@@ -3,6 +3,45 @@
 
 const std = @import("std");
 
+/// Creates a named build module with the given source file and import
+/// dependencies. Centralizes the repetitive target/optimize/imports
+/// boilerplate that every module declaration shares.
+fn addLibModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    name: []const u8,
+    source: []const u8,
+    imports: []const std.Build.Module.Import,
+) *std.Build.Module {
+    return b.addModule(name, .{
+        .root_source_file = b.path(source),
+        .target = target,
+        .optimize = optimize,
+        .imports = imports,
+    });
+}
+
+/// Creates a test compilation unit for a source file with the given
+/// import dependencies. Centralizes the repetitive target/optimize
+/// boilerplate that every test declaration shares.
+fn addLibTest(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    source: []const u8,
+    imports: []const std.Build.Module.Import,
+) *std.Build.Step.Compile {
+    return b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(source),
+            .target = target,
+            .optimize = optimize,
+            .imports = imports,
+        }),
+    });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -34,634 +73,332 @@ pub fn build(b: *std.Build) void {
     // Core Type Modules
     // ============================================================
 
-    // types.zig - Core type definitions, encoding enums, constants
-    const types_mod = b.addModule("types", .{
-        .root_source_file = b.path("src/types.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const types_mod = addLibModule(b, target, optimize, "types", "src/types.zig", &.{});
 
-    // codepoint.zig - Unicode code point operations
-    const codepoint_mod = b.addModule("codepoint", .{
-        .root_source_file = b.path("src/codepoint.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const codepoint_mod = addLibModule(b, target, optimize, "codepoint", "src/codepoint.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
     // ============================================================
     // Encoding Modules - UTF-8, UTF-16, UTF-32, ASCII, Latin-1
     // ============================================================
 
-    // utf8.zig - UTF-8 encoding/decoding (RFC 3629)
-    const utf8_mod = b.addModule("utf8", .{
-        .root_source_file = b.path("src/utf8.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-        },
+    const utf8_mod = addLibModule(b, target, optimize, "utf8", "src/utf8.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
     });
 
-    // utf16.zig - UTF-16 encoding/decoding (RFC 2781)
-    const utf16_mod = b.addModule("utf16", .{
-        .root_source_file = b.path("src/utf16.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-        },
+    const utf16_mod = addLibModule(b, target, optimize, "utf16", "src/utf16.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
     });
 
-    // utf32.zig - UTF-32 encoding/decoding
-    const utf32_mod = b.addModule("utf32", .{
-        .root_source_file = b.path("src/utf32.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-        },
+    const utf32_mod = addLibModule(b, target, optimize, "utf32", "src/utf32.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
     });
 
-    // ascii.zig - ASCII operations
-    const ascii_mod = b.addModule("ascii", .{
-        .root_source_file = b.path("src/ascii.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ascii_mod = addLibModule(b, target, optimize, "ascii", "src/ascii.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // latin1.zig - Latin-1/ISO-8859-1 operations
-    const latin1_mod = b.addModule("latin1", .{
-        .root_source_file = b.path("src/latin1.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-        },
+    const latin1_mod = addLibModule(b, target, optimize, "latin1", "src/latin1.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
     });
 
     // ============================================================
     // Unicode Modules - Categories, Normalization, Boundaries
     // ============================================================
 
-    // unicode/categories.zig - Unicode character categories (UAX #44)
-    const categories_mod = b.addModule("categories", .{
-        .root_source_file = b.path("src/unicode/categories.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-        },
+    const categories_mod = addLibModule(b, target, optimize, "categories", "src/unicode/categories.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
     });
 
     // ============================================================
     // Unicode Data Modules - Generated from UCD
     // ============================================================
 
-    // unicode/data/ccc.zig - Canonical Combining Class table
-    const ucd_ccc_mod = b.addModule("ucd_ccc", .{
-        .root_source_file = b.path("src/unicode/data/ccc.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_ccc_mod = addLibModule(b, target, optimize, "ucd_ccc", "src/unicode/data/ccc.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/data/decomposition.zig - Decomposition mappings
-    const ucd_decomp_mod = b.addModule("ucd_decomposition", .{
-        .root_source_file = b.path("src/unicode/data/decomposition.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_decomp_mod = addLibModule(b, target, optimize, "ucd_decomposition", "src/unicode/data/decomposition.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/data/composition.zig - Composition mappings
-    const ucd_comp_mod = b.addModule("ucd_composition", .{
-        .root_source_file = b.path("src/unicode/data/composition.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_comp_mod = addLibModule(b, target, optimize, "ucd_composition", "src/unicode/data/composition.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/data/scripts.zig - Script detection (UAX #24)
-    const ucd_scripts_mod = b.addModule("ucd_scripts", .{
-        .root_source_file = b.path("src/unicode/data/scripts.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_scripts_mod = addLibModule(b, target, optimize, "ucd_scripts", "src/unicode/data/scripts.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/data/line_break.zig - Line breaking (UAX #14)
-    const ucd_line_break_mod = b.addModule("ucd_line_break", .{
-        .root_source_file = b.path("src/unicode/data/line_break.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_line_break_mod = addLibModule(b, target, optimize, "ucd_line_break", "src/unicode/data/line_break.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/data/bidi.zig - Bidirectional properties (UAX #9)
-    const ucd_bidi_mod = b.addModule("ucd_bidi", .{
-        .root_source_file = b.path("src/unicode/data/bidi.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_bidi_mod = addLibModule(b, target, optimize, "ucd_bidi", "src/unicode/data/bidi.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/data/identifier.zig - Identifier syntax (UAX #31)
-    const ucd_identifier_mod = b.addModule("ucd_identifier", .{
-        .root_source_file = b.path("src/unicode/data/identifier.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const ucd_identifier_mod = addLibModule(b, target, optimize, "ucd_identifier", "src/unicode/data/identifier.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // unicode/normalization.zig - Unicode normalization (UAX #15)
-    const normalization_mod = b.addModule("normalization", .{
-        .root_source_file = b.path("src/unicode/normalization.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "categories", .module = categories_mod },
-            .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
-            .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
-            .{ .name = "ucd_composition", .module = ucd_comp_mod },
-        },
+    const normalization_mod = addLibModule(b, target, optimize, "normalization", "src/unicode/normalization.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
+        .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
+        .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
+        .{ .name = "ucd_composition", .module = ucd_comp_mod },
     });
 
-    // unicode/grapheme.zig - Grapheme cluster boundaries (UAX #29)
-    const grapheme_mod = b.addModule("grapheme", .{
-        .root_source_file = b.path("src/unicode/grapheme.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "categories", .module = categories_mod },
-        },
+    const grapheme_mod = addLibModule(b, target, optimize, "grapheme", "src/unicode/grapheme.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
     });
 
-    // unicode/word.zig - Word boundaries (UAX #29)
-    const word_mod = b.addModule("word", .{
-        .root_source_file = b.path("src/unicode/word.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "categories", .module = categories_mod },
-        },
+    const word_mod = addLibModule(b, target, optimize, "word", "src/unicode/word.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
     });
 
-    // unicode/sentence.zig - Sentence boundaries (UAX #29)
-    const sentence_mod = b.addModule("sentence", .{
-        .root_source_file = b.path("src/unicode/sentence.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "categories", .module = categories_mod },
-        },
+    const sentence_mod = addLibModule(b, target, optimize, "sentence", "src/unicode/sentence.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
     });
 
-    // unicode/case.zig - Case mapping and folding (UAX #29, SpecialCasing.txt)
-    const case_mod = b.addModule("case", .{
-        .root_source_file = b.path("src/unicode/case.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "categories", .module = categories_mod },
-        },
+    const case_mod = addLibModule(b, target, optimize, "case", "src/unicode/case.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
     });
 
-    // unicode/collation.zig - Unicode collation (UTS #10)
-    const collation_mod = b.addModule("collation", .{
-        .root_source_file = b.path("src/unicode/collation.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "categories", .module = categories_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-        },
+    const collation_mod = addLibModule(b, target, optimize, "collation", "src/unicode/collation.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
+        .{ .name = "normalization", .module = normalization_mod },
     });
 
-    // unicode/scripts.zig - Script detection (UAX #24)
-    const scripts_mod = b.addModule("scripts", .{
-        .root_source_file = b.path("src/unicode/scripts.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "ucd_scripts", .module = ucd_scripts_mod },
-        },
+    const scripts_mod = addLibModule(b, target, optimize, "scripts", "src/unicode/scripts.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_scripts", .module = ucd_scripts_mod },
     });
 
-    // unicode/line_break.zig - Line breaking (UAX #14)
-    const line_break_mod = b.addModule("line_break", .{
-        .root_source_file = b.path("src/unicode/line_break.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "ucd_line_break", .module = ucd_line_break_mod },
-        },
+    const line_break_mod = addLibModule(b, target, optimize, "line_break", "src/unicode/line_break.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_line_break", .module = ucd_line_break_mod },
     });
 
-    // unicode/bidi.zig - Bidirectional algorithm (UAX #9)
-    const bidi_mod = b.addModule("bidi", .{
-        .root_source_file = b.path("src/unicode/bidi.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "ucd_bidi", .module = ucd_bidi_mod },
-        },
+    const bidi_mod = addLibModule(b, target, optimize, "bidi", "src/unicode/bidi.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_bidi", .module = ucd_bidi_mod },
     });
 
-    // unicode/identifier.zig - Identifier syntax (UAX #31)
-    const identifier_mod = b.addModule("identifier", .{
-        .root_source_file = b.path("src/unicode/identifier.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "ucd_identifier", .module = ucd_identifier_mod },
-        },
+    const identifier_mod = addLibModule(b, target, optimize, "identifier", "src/unicode/identifier.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_identifier", .module = ucd_identifier_mod },
     });
 
     // ============================================================
     // Encoding Detection and Conversion
     // ============================================================
 
-    // encoding/detection.zig - Encoding detection
-    const detection_mod = b.addModule("detection", .{
-        .root_source_file = b.path("src/encoding/detection.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "ascii", .module = ascii_mod },
-        },
+    const detection_mod = addLibModule(b, target, optimize, "detection", "src/encoding/detection.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "ascii", .module = ascii_mod },
     });
 
-    // encoding/bom.zig - Byte Order Mark handling
-    const bom_mod = b.addModule("bom", .{
-        .root_source_file = b.path("src/encoding/bom.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const bom_mod = addLibModule(b, target, optimize, "bom", "src/encoding/bom.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // encoding/transcoding.zig - Encoding transcoding
-    const transcoding_mod = b.addModule("transcoding", .{
-        .root_source_file = b.path("src/encoding/transcoding.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "utf32", .module = utf32_mod },
-            .{ .name = "ascii", .module = ascii_mod },
-            .{ .name = "latin1", .module = latin1_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-        },
+    const transcoding_mod = addLibModule(b, target, optimize, "transcoding", "src/encoding/transcoding.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "utf32", .module = utf32_mod },
+        .{ .name = "ascii", .module = ascii_mod },
+        .{ .name = "latin1", .module = latin1_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
     });
 
     // ============================================================
     // Iterator Modules
     // ============================================================
 
-    // iterator.zig - Various string iterators
-    const iterator_mod = b.addModule("iterator", .{
-        .root_source_file = b.path("src/iterator.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "word", .module = word_mod },
-            .{ .name = "sentence", .module = sentence_mod },
-        },
+    const iterator_mod = addLibModule(b, target, optimize, "iterator", "src/iterator.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "word", .module = word_mod },
+        .{ .name = "sentence", .module = sentence_mod },
     });
 
     // ============================================================
     // Core String Operations
     // ============================================================
 
-    // ops/search.zig - Search operations (find, contains, indexOf, etc.)
-    const search_mod = b.addModule("search", .{
-        .root_source_file = b.path("src/ops/search.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "iterator", .module = iterator_mod },
-        },
+    const search_mod = addLibModule(b, target, optimize, "search", "src/ops/search.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "iterator", .module = iterator_mod },
     });
 
-    // ops/comparison.zig - Comparison operations
-    const comparison_mod = b.addModule("comparison", .{
-        .root_source_file = b.path("src/ops/comparison.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "case", .module = case_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-            .{ .name = "collation", .module = collation_mod },
-        },
+    const comparison_mod = addLibModule(b, target, optimize, "comparison", "src/ops/comparison.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "case", .module = case_mod },
+        .{ .name = "normalization", .module = normalization_mod },
+        .{ .name = "collation", .module = collation_mod },
     });
 
-    // ops/manipulation.zig - String manipulation (split, join, trim, etc.)
-    const manipulation_mod = b.addModule("manipulation", .{
-        .root_source_file = b.path("src/ops/manipulation.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "iterator", .module = iterator_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "categories", .module = categories_mod },
-        },
+    const manipulation_mod = addLibModule(b, target, optimize, "manipulation", "src/ops/manipulation.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "iterator", .module = iterator_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "categories", .module = categories_mod },
     });
 
     // ============================================================
     // Conversion Modules
     // ============================================================
 
-    // conversion/numeric.zig - Numeric parsing and formatting
-    const numeric_mod = b.addModule("numeric", .{
-        .root_source_file = b.path("src/conversion/numeric.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "ascii", .module = ascii_mod },
-        },
+    const numeric_mod = addLibModule(b, target, optimize, "numeric", "src/conversion/numeric.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "ascii", .module = ascii_mod },
     });
 
-    // conversion/formatting.zig - String formatting
-    const formatting_mod = b.addModule("formatting", .{
-        .root_source_file = b.path("src/conversion/formatting.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "numeric", .module = numeric_mod },
-        },
+    const formatting_mod = addLibModule(b, target, optimize, "formatting", "src/conversion/formatting.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "numeric", .module = numeric_mod },
     });
 
     // ============================================================
     // High-Level String Types
     // ============================================================
 
-    // string.zig - Main UTF-8 backed string type
-    const string_mod = b.addModule("string", .{
-        .root_source_file = b.path("src/string.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "iterator", .module = iterator_mod },
-            .{ .name = "search", .module = search_mod },
-            .{ .name = "comparison", .module = comparison_mod },
-            .{ .name = "manipulation", .module = manipulation_mod },
-            .{ .name = "case", .module = case_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-        },
+    const string_mod = addLibModule(b, target, optimize, "string", "src/string.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "iterator", .module = iterator_mod },
+        .{ .name = "search", .module = search_mod },
+        .{ .name = "comparison", .module = comparison_mod },
+        .{ .name = "manipulation", .module = manipulation_mod },
+        .{ .name = "case", .module = case_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "normalization", .module = normalization_mod },
     });
 
-    // string16.zig - UTF-16 backed string type
-    const string16_mod = b.addModule("string16", .{
-        .root_source_file = b.path("src/string16.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "iterator", .module = iterator_mod },
-            .{ .name = "search", .module = search_mod },
-            .{ .name = "comparison", .module = comparison_mod },
-            .{ .name = "manipulation", .module = manipulation_mod },
-            .{ .name = "case", .module = case_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-            .{ .name = "transcoding", .module = transcoding_mod },
-        },
+    const string16_mod = addLibModule(b, target, optimize, "string16", "src/string16.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "iterator", .module = iterator_mod },
+        .{ .name = "search", .module = search_mod },
+        .{ .name = "comparison", .module = comparison_mod },
+        .{ .name = "manipulation", .module = manipulation_mod },
+        .{ .name = "case", .module = case_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "normalization", .module = normalization_mod },
+        .{ .name = "transcoding", .module = transcoding_mod },
     });
 
-    // builder.zig - String builder for efficient concatenation
-    const builder_mod = b.addModule("builder", .{
-        .root_source_file = b.path("src/builder.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "string", .module = string_mod },
-        },
+    const builder_mod = addLibModule(b, target, optimize, "builder", "src/builder.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "string", .module = string_mod },
     });
 
     // ============================================================
     // Utility Modules
     // ============================================================
 
-    // util/simd.zig - SIMD-accelerated operations
-    const simd_mod = b.addModule("simd", .{
-        .root_source_file = b.path("src/util/simd.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const simd_mod = addLibModule(b, target, optimize, "simd", "src/util/simd.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // util/pool.zig - String interning pool
-    const pool_mod = b.addModule("pool", .{
-        .root_source_file = b.path("src/util/pool.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "string", .module = string_mod },
-        },
+    // Wire SIMD acceleration into case module for fast ASCII paths
+    case_mod.addImport("simd", simd_mod);
+
+    const pool_mod = addLibModule(b, target, optimize, "pool", "src/util/pool.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "string", .module = string_mod },
     });
 
-    // util/rope.zig - Rope data structure for large strings
-    const rope_mod = b.addModule("rope", .{
-        .root_source_file = b.path("src/util/rope.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const rope_mod = addLibModule(b, target, optimize, "rope", "src/util/rope.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // util/mmap.zig - Memory-mapped string support
-    const mmap_mod = b.addModule("mmap", .{
-        .root_source_file = b.path("src/util/mmap.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-        },
+    const mmap_mod = addLibModule(b, target, optimize, "mmap", "src/util/mmap.zig", &.{
+        .{ .name = "types", .module = types_mod },
     });
 
-    // util/lazy_norm.zig - Lazy Unicode normalization
-    const lazy_norm_mod = b.addModule("lazy_norm", .{
-        .root_source_file = b.path("src/util/lazy_norm.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-        },
+    const lazy_norm_mod = addLibModule(b, target, optimize, "lazy_norm", "src/util/lazy_norm.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "normalization", .module = normalization_mod },
     });
 
     // ============================================================
     // Extended Features (Phase 7)
     // ============================================================
 
-    // extended/regex.zig - Regular expression support
-    const regex_mod = b.addModule("regex", .{
-        .root_source_file = b.path("src/extended/regex.zig"),
-        .target = target,
-        .optimize = optimize,
+    const regex_mod = addLibModule(b, target, optimize, "regex", "src/extended/regex.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "categories", .module = categories_mod },
     });
 
-    // extended/fuzzy.zig - Fuzzy matching algorithms
-    const fuzzy_mod = b.addModule("fuzzy", .{
-        .root_source_file = b.path("src/extended/fuzzy.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const fuzzy_mod = addLibModule(b, target, optimize, "fuzzy", "src/extended/fuzzy.zig", &.{});
+    const phonetic_mod = addLibModule(b, target, optimize, "phonetic", "src/extended/phonetic.zig", &.{});
+    const locale_mod = addLibModule(b, target, optimize, "locale", "src/extended/locale.zig", &.{});
 
-    // extended/phonetic.zig - Phonetic algorithms
-    const phonetic_mod = b.addModule("phonetic", .{
-        .root_source_file = b.path("src/extended/phonetic.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // extended/locale.zig - Locale-specific formatting
-    const locale_mod = b.addModule("locale", .{
-        .root_source_file = b.path("src/extended/locale.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // extended/icu.zig - ICU compatibility layer
-    const icu_mod = b.addModule("icu", .{
-        .root_source_file = b.path("src/extended/icu.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "word", .module = word_mod },
-            .{ .name = "sentence", .module = sentence_mod },
-            .{ .name = "collation", .module = collation_mod },
-            .{ .name = "case", .module = case_mod },
-        },
+    const icu_mod = addLibModule(b, target, optimize, "icu", "src/extended/icu.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "normalization", .module = normalization_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "word", .module = word_mod },
+        .{ .name = "sentence", .module = sentence_mod },
+        .{ .name = "collation", .module = collation_mod },
+        .{ .name = "case", .module = case_mod },
     });
 
     // ============================================================
     // Legacy Encoding Modules (Phase 8)
     // ============================================================
 
-    // encoding/legacy/windows.zig - Windows code pages
-    const windows_codepage_mod = b.addModule("windows_codepage", .{
-        .root_source_file = b.path("src/encoding/legacy/windows.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const legacy_encoding_errors_mod = addLibModule(b, target, optimize, "legacy_encoding_errors", "src/encoding/legacy/errors.zig", &.{});
 
-    // encoding/legacy/iso8859.zig - ISO-8859 family
-    const iso8859_mod = b.addModule("iso8859", .{
-        .root_source_file = b.path("src/encoding/legacy/iso8859.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const legacy_err_import = [_]std.Build.Module.Import{
+        .{ .name = "legacy_encoding_errors", .module = legacy_encoding_errors_mod },
+    };
 
-    // encoding/legacy/chinese.zig - GB2312/GBK/GB18030
-    const chinese_encoding_mod = b.addModule("chinese_encoding", .{
-        .root_source_file = b.path("src/encoding/legacy/chinese.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // encoding/legacy/japanese.zig - Shift_JIS/EUC-JP
-    const japanese_encoding_mod = b.addModule("japanese_encoding", .{
-        .root_source_file = b.path("src/encoding/legacy/japanese.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // encoding/legacy/korean.zig - EUC-KR/CP949
-    const korean_encoding_mod = b.addModule("korean_encoding", .{
-        .root_source_file = b.path("src/encoding/legacy/korean.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // encoding/legacy/big5.zig - Big5/Big5-HKSCS
-    const big5_mod = b.addModule("big5", .{
-        .root_source_file = b.path("src/encoding/legacy/big5.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const windows_codepage_mod = addLibModule(b, target, optimize, "windows_codepage", "src/encoding/legacy/windows.zig", &legacy_err_import);
+    const iso8859_mod = addLibModule(b, target, optimize, "iso8859", "src/encoding/legacy/iso8859.zig", &legacy_err_import);
+    const chinese_encoding_mod = addLibModule(b, target, optimize, "chinese_encoding", "src/encoding/legacy/chinese.zig", &legacy_err_import);
+    const japanese_encoding_mod = addLibModule(b, target, optimize, "japanese_encoding", "src/encoding/legacy/japanese.zig", &legacy_err_import);
+    const korean_encoding_mod = addLibModule(b, target, optimize, "korean_encoding", "src/encoding/legacy/korean.zig", &legacy_err_import);
+    const big5_mod = addLibModule(b, target, optimize, "big5", "src/encoding/legacy/big5.zig", &legacy_err_import);
 
     // parallel.zig - Spice-based parallel operations
     const parallel_mod = b.addModule("parallel", .{
@@ -823,90 +560,29 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all unit tests");
 
     // Core module tests
-    const test_types = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/types.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_types).step);
-
-    const test_codepoint = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/codepoint.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_codepoint).step);
-
-    const test_utf8 = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/utf8.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_utf8).step);
-
-    const test_utf16 = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/utf16.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_utf16).step);
-
-    const test_utf32 = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/utf32.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_utf32).step);
-
-    const test_ascii = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ascii.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_ascii).step);
-
-    const test_latin1 = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/latin1.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(test_latin1).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/types.zig", &.{})).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/codepoint.zig", &.{
+        .{ .name = "types", .module = types_mod },
+    })).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/utf8.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+    })).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/utf16.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+    })).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/utf32.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+    })).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/ascii.zig", &.{
+        .{ .name = "types", .module = types_mod },
+    })).step);
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/latin1.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+    })).step);
 
     // Main library test
     const test_lib = b.addTest(.{
@@ -914,21 +590,19 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(test_lib).step);
 
-    // Parallel module test
-    const test_parallel = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/parallel.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "build_options", .module = build_options.createModule() },
-            },
-        }),
+    // Parallel module test (special: conditional spice import)
+    const test_parallel = addLibTest(b, target, optimize, "src/parallel.zig", &.{
+        .{ .name = "build_options", .module = build_options.createModule() },
     });
     if (spice_mod) |sm| {
         test_parallel.root_module.addImport("spice", sm);
     }
     test_step.dependOn(&b.addRunArtifact(test_parallel).step);
+
+    test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/extended/regex.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "categories", .module = categories_mod },
+    })).step);
 
     // ============================================================
     // Encoding Tests
@@ -936,23 +610,15 @@ pub fn build(b: *std.Build) void {
 
     const test_encoding_step = b.step("test-encoding", "Run encoding tests");
 
-    const test_transcoding = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/encoding/transcoding.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "utf8", .module = utf8_mod },
-                .{ .name = "utf16", .module = utf16_mod },
-                .{ .name = "utf32", .module = utf32_mod },
-                .{ .name = "ascii", .module = ascii_mod },
-                .{ .name = "latin1", .module = latin1_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-            },
-        }),
-    });
-    test_encoding_step.dependOn(&b.addRunArtifact(test_transcoding).step);
+    test_encoding_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/encoding/transcoding.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "utf32", .module = utf32_mod },
+        .{ .name = "ascii", .module = ascii_mod },
+        .{ .name = "latin1", .module = latin1_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+    })).step);
 
     // ============================================================
     // Unicode Tests
@@ -960,115 +626,45 @@ pub fn build(b: *std.Build) void {
 
     const test_unicode_step = b.step("test-unicode", "Run Unicode tests");
 
-    const test_categories = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/categories.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_categories).step);
-
-    const test_normalization = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/normalization.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-                .{ .name = "categories", .module = categories_mod },
-                .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
-                .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
-                .{ .name = "ucd_composition", .module = ucd_comp_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_normalization).step);
-
-    const test_grapheme = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/grapheme.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-                .{ .name = "categories", .module = categories_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_grapheme).step);
-
-    const test_case = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/case.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-                .{ .name = "categories", .module = categories_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_case).step);
-
-    const test_scripts = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/scripts.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "ucd_scripts", .module = ucd_scripts_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_scripts).step);
-
-    const test_line_break = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/line_break.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "ucd_line_break", .module = ucd_line_break_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_line_break).step);
-
-    const test_bidi = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/bidi.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "ucd_bidi", .module = ucd_bidi_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_bidi).step);
-
-    const test_identifier = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/unicode/identifier.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "ucd_identifier", .module = ucd_identifier_mod },
-            },
-        }),
-    });
-    test_unicode_step.dependOn(&b.addRunArtifact(test_identifier).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/categories.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/normalization.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
+        .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
+        .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
+        .{ .name = "ucd_composition", .module = ucd_comp_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/grapheme.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/case.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "categories", .module = categories_mod },
+        .{ .name = "simd", .module = simd_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/scripts.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_scripts", .module = ucd_scripts_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/line_break.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_line_break", .module = ucd_line_break_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/bidi.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_bidi", .module = ucd_bidi_mod },
+    })).step);
+    test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/identifier.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "ucd_identifier", .module = ucd_identifier_mod },
+    })).step);
 
     // ============================================================
     // Operations Tests
@@ -1076,54 +672,28 @@ pub fn build(b: *std.Build) void {
 
     const test_ops_step = b.step("test-ops", "Run operations tests");
 
-    const test_search = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ops/search.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-                .{ .name = "utf8", .module = utf8_mod },
-                .{ .name = "iterator", .module = iterator_mod },
-            },
-        }),
-    });
-    test_ops_step.dependOn(&b.addRunArtifact(test_search).step);
-
-    const test_manipulation = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ops/manipulation.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-                .{ .name = "utf8", .module = utf8_mod },
-                .{ .name = "iterator", .module = iterator_mod },
-                .{ .name = "grapheme", .module = grapheme_mod },
-                .{ .name = "categories", .module = categories_mod },
-            },
-        }),
-    });
-    test_ops_step.dependOn(&b.addRunArtifact(test_manipulation).step);
-
-    const test_comparison = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ops/comparison.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "codepoint", .module = codepoint_mod },
-                .{ .name = "utf8", .module = utf8_mod },
-                .{ .name = "case", .module = case_mod },
-                .{ .name = "normalization", .module = normalization_mod },
-                .{ .name = "collation", .module = collation_mod },
-            },
-        }),
-    });
-    test_ops_step.dependOn(&b.addRunArtifact(test_comparison).step);
+    test_ops_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/ops/search.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "iterator", .module = iterator_mod },
+    })).step);
+    test_ops_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/ops/manipulation.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "iterator", .module = iterator_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "categories", .module = categories_mod },
+    })).step);
+    test_ops_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/ops/comparison.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "case", .module = case_mod },
+        .{ .name = "normalization", .module = normalization_mod },
+        .{ .name = "collation", .module = collation_mod },
+    })).step);
 
     // ============================================================
     // String Type Tests
@@ -1141,19 +711,11 @@ pub fn build(b: *std.Build) void {
     });
     test_string_step.dependOn(&b.addRunArtifact(test_string16).step);
 
-    const test_builder = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/builder.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "types", .module = types_mod },
-                .{ .name = "utf8", .module = utf8_mod },
-                .{ .name = "string", .module = string_mod },
-            },
-        }),
-    });
-    test_string_step.dependOn(&b.addRunArtifact(test_builder).step);
+    test_string_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/builder.zig", &.{
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "string", .module = string_mod },
+    })).step);
 
     // ============================================================
     // Integration Tests
@@ -1161,29 +723,11 @@ pub fn build(b: *std.Build) void {
 
     const test_integration_step = b.step("test-integration", "Run integration tests");
 
-    const test_vectors = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/vectors.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_integration_step.dependOn(&b.addRunArtifact(test_vectors).step);
-
-    const test_acceptance = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/acceptance.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_integration_step.dependOn(&b.addRunArtifact(test_acceptance).step);
+    const strings_import = [_]std.Build.Module.Import{
+        .{ .name = "strings", .module = strings_mod },
+    };
+    test_integration_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/vectors.zig", &strings_import)).step);
+    test_integration_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/acceptance.zig", &strings_import)).step);
 
     // ============================================================
     // Comprehensive Tests
@@ -1191,70 +735,11 @@ pub fn build(b: *std.Build) void {
 
     const test_comprehensive_step = b.step("test-comprehensive", "Run comprehensive test suite");
 
-    // Unicode Conformance Tests (UAX #15, #29, #14, #9, #31, #24)
-    const test_unicode_conformance = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unicode_conformance.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_comprehensive_step.dependOn(&b.addRunArtifact(test_unicode_conformance).step);
-
-    // Encoding Round-Trip Tests
-    const test_encoding_roundtrip = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/encoding_roundtrip.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_comprehensive_step.dependOn(&b.addRunArtifact(test_encoding_roundtrip).step);
-
-    // Edge Cases and Stress Tests
-    const test_edge_cases = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/edge_cases.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_comprehensive_step.dependOn(&b.addRunArtifact(test_edge_cases).step);
-
-    // Extended Features Tests (regex, fuzzy, phonetic, locale, ICU)
-    const test_extended_features = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/extended_features.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_comprehensive_step.dependOn(&b.addRunArtifact(test_extended_features).step);
-
-    // Legacy Encoding Tests (Windows CP, ISO-8859, CJK)
-    const test_legacy_encodings = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/legacy_encodings.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "strings", .module = strings_mod },
-            },
-        }),
-    });
-    test_comprehensive_step.dependOn(&b.addRunArtifact(test_legacy_encodings).step);
+    test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/unicode_conformance.zig", &strings_import)).step);
+    test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/encoding_roundtrip.zig", &strings_import)).step);
+    test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/edge_cases.zig", &strings_import)).step);
+    test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/extended_features.zig", &strings_import)).step);
+    test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/legacy_encodings.zig", &strings_import)).step);
 
     // ============================================================
     // ZigStr Module Tests

@@ -127,6 +127,7 @@ pub const Iterator = struct {
     bytes: []const u8,
     index: usize,
 
+    /// Creates a new UTF-8 iterator over the given bytes.
     pub fn init(bytes: []const u8) Iterator {
         return .{ .bytes = bytes, .index = 0 };
     }

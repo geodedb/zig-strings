@@ -14,6 +14,32 @@ const iterator = @import("iterator");
 
 pub const Codepoint = types.Codepoint;
 
+/// Builds a 256-element boolean lookup table from an array of codepoints.
+/// Only ASCII codepoints (< 128) are indexed. Returns the table and a flag
+/// indicating whether all codepoints in the set are ASCII.
+fn buildCodepointLookup(codepoints: []const Codepoint) struct { table: [256]bool, all_ascii: bool } {
+    var table = [_]bool{false} ** 256;
+    var all_ascii = true;
+    for (codepoints) |cp| {
+        if (cp < 128) {
+            table[@intCast(cp)] = true;
+        } else {
+            all_ascii = false;
+        }
+    }
+    return .{ .table = table, .all_ascii = all_ascii };
+}
+
+/// Builds a 256-element boolean lookup table from a byte slice.
+/// Since all bytes are 0-255, every entry is representable in the table.
+fn buildByteLookup(bytes: []const u8) [256]bool {
+    var table = [_]bool{false} ** 256;
+    for (bytes) |b| {
+        table[b] = true;
+    }
+    return table;
+}
+
 /// Finds the first occurrence of a substring
 pub fn indexOf(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len == 0) return 0;
@@ -69,16 +95,28 @@ pub fn indexOfNthCodepoint(bytes: []const u8, n: usize) ?usize {
     return null;
 }
 
-/// Finds the first occurrence of any of the given code points
+/// Finds the first occurrence of any of the given code points.
+/// Uses a 256-element lookup table for O(1) ASCII membership testing,
+/// falling back to linear scan only for non-ASCII codepoints in the set.
 pub fn indexOfAny(haystack: []const u8, codepoints: []const Codepoint) ?usize {
+    const lookup = buildCodepointLookup(codepoints);
     var iter = utf8.iterator(haystack);
 
     while (iter.nextWithIndex()) |result| {
-        for (codepoints) |cp| {
-            if (result.cp == cp) {
+        if (result.cp < 128) {
+            // ASCII fast-path: O(1) lookup
+            if (lookup.table[@intCast(result.cp)]) {
                 return result.index;
             }
+        } else if (!lookup.all_ascii) {
+            // Non-ASCII codepoint with non-ASCII entries in set: linear scan
+            for (codepoints) |cp| {
+                if (result.cp == cp) {
+                    return result.index;
+                }
+            }
         }
+        // If lookup.all_ascii and cp >= 128, no match possible -- skip
     }
 
     return null;
@@ -89,17 +127,12 @@ pub fn indexOfAnyByte(haystack: []const u8, bytes: []const u8) ?usize {
     return std.mem.indexOfAny(u8, haystack, bytes);
 }
 
-/// Finds the first byte NOT in the set
+/// Finds the first byte NOT in the set.
+/// Uses a 256-element lookup table for O(1) membership testing per byte.
 pub fn indexOfNoneByte(haystack: []const u8, bytes: []const u8) ?usize {
+    const table = buildByteLookup(bytes);
     for (haystack, 0..) |b, i| {
-        var found = false;
-        for (bytes) |target| {
-            if (b == target) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) return i;
+        if (!table[b]) return i;
     }
     return null;
 }
@@ -165,6 +198,11 @@ pub fn endsWithCodepoint(haystack: []const u8, cp: Codepoint) bool {
 pub fn findAll(allocator: std.mem.Allocator, haystack: []const u8, needle: []const u8) ![]usize {
     var indices: std.ArrayList(usize) = .empty;
     errdefer indices.deinit(allocator);
+    // Pre-allocate for expected number of matches; haystack.len / needle.len
+    // is an upper bound on the number of non-overlapping occurrences.
+    if (needle.len > 0 and haystack.len >= needle.len) {
+        try indices.ensureTotalCapacity(allocator, haystack.len / needle.len);
+    }
 
     if (needle.len == 0) return indices.toOwnedSlice(allocator);
 
@@ -183,6 +221,7 @@ pub const FindIterator = struct {
     needle: []const u8,
     pos: usize,
 
+    /// Creates a new find iterator that yields byte positions of non-overlapping matches.
     pub fn init(haystack: []const u8, needle: []const u8) FindIterator {
         return .{
             .haystack = haystack,
@@ -191,6 +230,7 @@ pub const FindIterator = struct {
         };
     }
 
+    /// Returns the byte index of the next match, or null when exhausted.
     pub fn next(self: *FindIterator) ?usize {
         if (self.needle.len == 0 or self.pos >= self.haystack.len) {
             return null;
@@ -262,31 +302,53 @@ pub fn lastIndexFunc(haystack: []const u8, predicate: *const fn (Codepoint) bool
     return last_match;
 }
 
-/// Finds the first occurrence of any code point in chars (Unicode-aware)
+/// Finds the first occurrence of any code point in chars (Unicode-aware).
+/// Uses a 256-element lookup table for O(1) ASCII membership testing,
+/// falling back to linear scan only for non-ASCII codepoints in the set.
 pub fn indexOfAnyCodepoint(haystack: []const u8, chars: []const Codepoint) ?usize {
+    const lookup = buildCodepointLookup(chars);
     var iter = utf8.iterator(haystack);
     while (iter.nextWithIndex()) |result| {
-        for (chars) |cp| {
-            if (result.cp == cp) {
+        if (result.cp < 128) {
+            // ASCII fast-path: O(1) lookup
+            if (lookup.table[@intCast(result.cp)]) {
                 return result.index;
+            }
+        } else if (!lookup.all_ascii) {
+            // Non-ASCII codepoint with non-ASCII entries in set: linear scan
+            for (chars) |cp| {
+                if (result.cp == cp) {
+                    return result.index;
+                }
             }
         }
     }
     return null;
 }
 
-/// Finds the last occurrence of any code point in chars (Unicode-aware)
+/// Finds the last occurrence of any code point in chars (Unicode-aware).
+/// Uses a 256-element lookup table for O(1) ASCII membership testing,
+/// falling back to linear scan only for non-ASCII codepoints in the set.
 pub fn lastIndexOfAnyCodepoint(haystack: []const u8, chars: []const Codepoint) ?usize {
     if (haystack.len == 0) return null;
 
+    const lookup = buildCodepointLookup(chars);
     var last_match: ?usize = null;
     var iter = utf8.iterator(haystack);
 
     while (iter.nextWithIndex()) |result| {
-        for (chars) |cp| {
-            if (result.cp == cp) {
+        if (result.cp < 128) {
+            // ASCII fast-path: O(1) lookup
+            if (lookup.table[@intCast(result.cp)]) {
                 last_match = result.index;
-                break;
+            }
+        } else if (!lookup.all_ascii) {
+            // Non-ASCII codepoint with non-ASCII entries in set: linear scan
+            for (chars) |cp| {
+                if (result.cp == cp) {
+                    last_match = result.index;
+                    break;
+                }
             }
         }
     }
@@ -434,4 +496,91 @@ test "lastIndexFunc" {
 
     try testing.expectEqual(@as(?usize, 7), lastIndexFunc("hello123", isDigit));
     try testing.expectEqual(@as(?usize, null), lastIndexFunc("hello", isDigit));
+}
+
+// ============================================================================
+// Bitset lookup optimization tests (P2-12)
+// ============================================================================
+
+test "indexOfAny with ASCII codepoints uses O(1) lookup" {
+    const testing = std.testing;
+
+    const vowels = [_]Codepoint{ 'a', 'e', 'i', 'o', 'u' };
+    try testing.expectEqual(@as(?usize, 1), indexOfAny("hello", &vowels));
+    try testing.expectEqual(@as(?usize, null), indexOfAny("xyz", &vowels));
+}
+
+test "indexOfAny with non-ASCII codepoints" {
+    const testing = std.testing;
+
+    // U+00E9 = e-acute, U+00F1 = n-tilde
+    const chars = [_]Codepoint{ 0x00E9, 0x00F1 };
+    // "caf\xC3\xA9" = "cafe" with e-acute
+    try testing.expectEqual(@as(?usize, 3), indexOfAny("caf\xC3\xA9", &chars));
+    try testing.expectEqual(@as(?usize, null), indexOfAny("cafe", &chars));
+}
+
+test "indexOfAny with mixed ASCII and non-ASCII codepoints" {
+    const testing = std.testing;
+
+    const chars = [_]Codepoint{ 'a', 0x00E9 };
+    try testing.expectEqual(@as(?usize, 0), indexOfAny("abc", &chars));
+    // 'a' is at index 1 in "caf..." and comes before e-acute at index 3
+    try testing.expectEqual(@as(?usize, 1), indexOfAny("caf\xC3\xA9", &chars));
+    try testing.expectEqual(@as(?usize, null), indexOfAny("xyz", &chars));
+
+    // Test where only the non-ASCII codepoint matches
+    const non_ascii_only = [_]Codepoint{0x00E9};
+    try testing.expectEqual(@as(?usize, 3), indexOfAny("caf\xC3\xA9", &non_ascii_only));
+}
+
+test "indexOfNoneByte with lookup table" {
+    const testing = std.testing;
+
+    try testing.expectEqual(@as(?usize, 3), indexOfNoneByte("aaab", "a"));
+    try testing.expectEqual(@as(?usize, null), indexOfNoneByte("aaa", "a"));
+    try testing.expectEqual(@as(?usize, 0), indexOfNoneByte("hello", "xyz"));
+
+    // Large byte set
+    try testing.expectEqual(@as(?usize, 5), indexOfNoneByte("abcdeX", "abcde"));
+    try testing.expectEqual(@as(?usize, null), indexOfNoneByte("abcde", "abcde"));
+}
+
+test "indexOfAnyCodepoint with ASCII fast-path" {
+    const testing = std.testing;
+
+    const chars = [_]Codepoint{ 'x', 'y', 'z' };
+    try testing.expectEqual(@as(?usize, 4), indexOfAnyCodepoint("hellx", &chars));
+    try testing.expectEqual(@as(?usize, null), indexOfAnyCodepoint("hello", &chars));
+}
+
+test "indexOfAnyCodepoint with non-ASCII" {
+    const testing = std.testing;
+
+    const chars = [_]Codepoint{0x4E2D}; // CJK character
+    try testing.expectEqual(@as(?usize, 7), indexOfAnyCodepoint("Hello, \xE4\xB8\xAD", &chars));
+    try testing.expectEqual(@as(?usize, null), indexOfAnyCodepoint("Hello", &chars));
+}
+
+test "lastIndexOfAnyCodepoint with ASCII fast-path" {
+    const testing = std.testing;
+
+    const vowels = [_]Codepoint{ 'a', 'e', 'i', 'o', 'u' };
+    try testing.expectEqual(@as(?usize, 4), lastIndexOfAnyCodepoint("hello", &vowels));
+    try testing.expectEqual(@as(?usize, null), lastIndexOfAnyCodepoint("xyz", &vowels));
+}
+
+test "lastIndexOfAnyCodepoint with non-ASCII" {
+    const testing = std.testing;
+
+    const chars = [_]Codepoint{ 0x00E9, 'a' };
+    // "caf\xC3\xA9 caf\xC3\xA9" -- two e-acute at byte positions 3 and 9
+    try testing.expectEqual(@as(?usize, 9), lastIndexOfAnyCodepoint("caf\xC3\xA9 caf\xC3\xA9", &chars));
+}
+
+test "lastIndexOfAnyCodepoint empty haystack" {
+    const testing = std.testing;
+
+    const chars = [_]Codepoint{'a'};
+    try testing.expectEqual(@as(?usize, null), lastIndexOfAnyCodepoint("", &chars));
 }

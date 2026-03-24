@@ -27,10 +27,10 @@ Initial public release - Feature Complete.
   - Case mapping and case folding
   - Unicode Collation Algorithm per UTS #10
   - Script detection per UAX #24
-  - BiDi algorithm per UAX #9
+  - Basic BiDi direction detection (partial UAX #9)
   - Line breaking per UAX #14
   - Identifier syntax per UAX #31
-  - Full Unicode Character Database (UCD) tables
+  - Unicode Character Database (UCD) tables (simplified for some categories)
 
 - **Extended Unicode Categories**
   - Support for additional scripts and character categories
@@ -68,7 +68,7 @@ Initial public release - Feature Complete.
 - **CI/CD**
   - Integration with devnw/ci-catalog components
   - Support for Zig 0.15.x
-  - Code coverage support
+  - Code coverage support (via Zig's built-in `--coverage` flag; no additional tooling configured)
 
 ### Fixed
 - Comprehensive Unicode and regex improvements

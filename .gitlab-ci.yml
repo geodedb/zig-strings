@@ -151,6 +151,18 @@ test-integration-release-fast:
   needs:
     - build
 
+# Comprehensive tests (unicode conformance, encoding roundtrip, edge cases,
+# extended features, legacy encodings)
+test-comprehensive:
+  stage: test
+  image: debian:bookworm-slim
+  before_script:
+    - *install-zig
+  script:
+    - zig build test-comprehensive --summary all
+  needs:
+    - build
+
 # ReleaseSmall tests
 test-release-small:
   stage: test

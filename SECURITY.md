@@ -32,9 +32,8 @@ This project implements the following security measures:
 
 ### Code Security
 - Memory-safe Zig implementation
-- No external C dependencies (stdlib only)
+- No external C dependencies; optional Zig dependency on [spice](https://gitlab.com/devnw/zig/spice) for parallelism (controlled by `-Dspice=true/false` build flag)
 - Compile-time safety checks enabled
-- Fuzz testing for parser inputs
 
 ### Release Security
 - All releases are tagged and signed

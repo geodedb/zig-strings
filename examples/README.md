@@ -17,37 +17,21 @@ This directory contains practical examples demonstrating the features of the Zig
 | `09_word_sentence.zig` | Word and sentence segmentation |
 | `10_go_style.zig` | Go-style string functions |
 
-## Running Examples
+## Using These Examples
 
-### Using the Library
+These examples are **reference code** that demonstrates API usage patterns for the
+strings library. They are not wired into the project build system and cannot be
+compiled directly with `zig build`.
 
-First, ensure the strings library is available. If you're in the repository:
+To use the code in your own project:
 
-```bash
-cd /path/to/strings
+1. Add the strings library as a dependency in your project's `build.zig.zon`
+2. Copy or adapt the relevant example code into your own source files
+3. Import the library as `const strings = @import("strings");` (the module name
+   depends on how you configure the dependency in your `build.zig`)
 
-# Build the library
-zig build
-```
-
-### Running Individual Examples
-
-The examples are designed to be self-contained. To run an example:
-
-```bash
-# From the examples directory
-cd examples
-
-# Run directly (requires library to be importable)
-zig run 01_basic_strings.zig --mod strings:../src/lib.zig --deps strings
-```
-
-Or with the build system (if configured):
-
-```bash
-zig build example-01
-./zig-out/bin/example-01
-```
+See the main project [README](../README.md) for instructions on adding the
+strings library as a dependency.
 
 ## Example Descriptions
 

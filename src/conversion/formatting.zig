@@ -296,6 +296,7 @@ pub fn wrap(allocator: std.mem.Allocator, text: []const u8, width: usize) ![]u8 
 pub fn indent(allocator: std.mem.Allocator, text: []const u8, prefix: []const u8) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, text.len + prefix.len);
 
     var line_start: usize = 0;
     var at_line_start = true;
@@ -378,6 +379,7 @@ pub fn dedent(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     // Build result with indentation removed
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, text.len);
 
     line_start = 0;
     for (text, 0..) |c, i| {

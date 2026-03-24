@@ -274,7 +274,9 @@ pub const normalization = struct {
 };
 ```
 
-**Note:** NFD and NFKD are fully implemented. NFC and NFKC composition is in progress.
+**Note:** All four normalization forms (NFC, NFD, NFKC, NFKD) are fully implemented.
+
+**Warning:** `isNormalized` for NFC and NFKC forms currently only checks CCC ordering and may return false positives. For guaranteed correctness, normalize and compare: `std.mem.eql(u8, input, normalize(allocator, input, .nfc))`.
 
 ### case
 

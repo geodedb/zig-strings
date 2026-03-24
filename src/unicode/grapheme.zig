@@ -35,14 +35,17 @@ pub const GraphemeBreak = enum {
 
 /// Gets the grapheme break property for a code point
 pub fn getGraphemeBreak(cp: Codepoint) GraphemeBreak {
-    // CR
-    if (cp == 0x000D) return .CR;
-
-    // LF
-    if (cp == 0x000A) return .LF;
+    // ASCII fast-path: avoid the 30+ comparisons below for codepoints < 0x80.
+    // CR, LF, and C0/DEL control characters are handled explicitly; all
+    // remaining ASCII codepoints are .Other by definition (UAX #29).
+    if (cp < 0x80) {
+        if (cp == 0x0D) return .CR;
+        if (cp == 0x0A) return .LF;
+        if (cp < 0x20 or cp == 0x7F) return .Control;
+        return .Other;
+    }
 
     // Control (Cc, Cf minus certain characters)
-    if (cp < 0x0020 and cp != 0x000D and cp != 0x000A) return .Control;
     if (cp >= 0x007F and cp <= 0x009F) return .Control;
     if (cp == 0x00AD) return .Control; // Soft hyphen
 
@@ -370,6 +373,7 @@ pub const Iterator = struct {
     index: usize,
     state: GraphemeState,
 
+    /// Creates a new grapheme cluster iterator over the given UTF-8 bytes.
     pub fn init(bytes: []const u8) Iterator {
         return .{
             .bytes = bytes,

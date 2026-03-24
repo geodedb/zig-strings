@@ -19,6 +19,7 @@ const build_options = @import("build_options");
 const spice = if (build_options.enable_spice) @import("spice") else struct {
     pub const ThreadPool = void;
     pub const Task = void;
+    /// Stub for spice.Future when spice is disabled.
     pub fn Future(comptime I: type, comptime O: type) type {
         _ = I;
         _ = O;
@@ -92,6 +93,7 @@ pub fn parallelCount(comptime T: type, haystack: []const T, needle: []const T) u
 fn ParallelCountTask(comptime T: type) type {
     const Ctx = CountContext(T);
     return struct {
+        /// Spice fork/join task: recursively counts needle occurrences in haystack.
         pub fn task(t: *spice.Task, ctx: Ctx) usize {
             const haystack = ctx.haystack;
             const needle = ctx.needle;
@@ -177,6 +179,7 @@ pub fn parallelMap(
 fn ParallelMapTask(comptime T: type, comptime mapFn: fn (T) T) type {
     const Ctx = MapContext(T);
     return struct {
+        /// Spice fork/join task: recursively applies mapFn to each element.
         pub fn task(t: *spice.Task, ctx: Ctx) void {
             const input = ctx.input;
             const output = ctx.output;
@@ -238,6 +241,7 @@ pub fn parallelEditDistanceBatch(
 
 fn ParallelEditDistanceBatchTask() type {
     return struct {
+        /// Spice fork/join task: recursively computes edit distance for target batches.
         pub fn task(t: *spice.Task, ctx: EditDistanceBatchContext) void {
             const source = ctx.source;
             const targets = ctx.targets;
@@ -358,6 +362,7 @@ pub fn parallelFuzzySearch(
 
 fn ParallelFuzzySearchTask() type {
     return struct {
+        /// Spice fork/join task: recursively scores fuzzy search candidates.
         pub fn task(t: *spice.Task, ctx: FuzzySearchContext) void {
             const query = ctx.query;
             const candidates = ctx.candidates;
@@ -433,6 +438,7 @@ test "parallel count large" {
 
     var builder: std.ArrayList(u8) = .empty;
     defer builder.deinit(allocator);
+    try builder.ensureTotalCapacity(allocator, repetitions * (filler.len + pattern.len));
 
     var expected_count: usize = 0;
     for (0..repetitions) |_| {
@@ -518,4 +524,159 @@ test "parallel fuzzy search sequential path" {
     try std.testing.expectEqual(@as(usize, 0), results[0].index);
     try std.testing.expectEqual(@as(usize, 1), results[1].score); // 1 edit
     try std.testing.expectEqual(@as(usize, 1), results[1].index);
+}
+
+// ============================================================================
+// Tests exercising actual parallel execution paths (above thresholds)
+// ============================================================================
+
+test "parallelCount above threshold matches sequential" {
+    // Threshold is 4096 bytes. Build input > 4096 bytes with known needle count.
+    if (!build_options.enable_spice) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const needle = "FIND";
+    // Build a haystack of ~10000 bytes with needles placed every 100 bytes.
+    const size = 10_000;
+    var buf = try allocator.alloc(u8, size);
+    defer allocator.free(buf);
+
+    // Fill with dots
+    @memset(buf, '.');
+
+    // Place needles at known positions (non-overlapping, every 100 bytes)
+    var expected: usize = 0;
+    var pos: usize = 0;
+    while (pos + needle.len <= size) : (pos += 100) {
+        @memcpy(buf[pos..][0..needle.len], needle);
+        expected += 1;
+    }
+
+    // Verify input exceeds the parallel threshold
+    try std.testing.expect(buf.len >= 4096);
+
+    const parallel_result = parallelCount(u8, buf, needle);
+    const sequential_result = sequentialCount(u8, buf, needle);
+
+    try std.testing.expectEqual(sequential_result, parallel_result);
+    try std.testing.expectEqual(expected, parallel_result);
+}
+
+test "parallelEditDistanceBatch above threshold" {
+    // Threshold is 8 targets. Use 10 targets to exercise the parallel path.
+    if (!build_options.enable_spice) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const source = "kitten";
+    const target_count = 10;
+    const targets = [target_count][]const u8{
+        "kitten", // 0
+        "sitting", // 3
+        "mitten", // 1
+        "bitten", // 1
+        "kittens", // 1
+        "kitchen", // 2
+        "written", // 2
+        "hidden", // 3
+        "kitten", // 0
+        "butter", // 4
+    };
+    var results: [target_count]usize = undefined;
+
+    // Verify we exceed the threshold
+    try std.testing.expect(target_count >= 8);
+
+    try parallelEditDistanceBatch(source, &targets, &results, allocator);
+
+    // Compute expected via sequential path for comparison
+    var expected: [target_count]usize = undefined;
+    for (targets, 0..) |target, i| {
+        expected[i] = try editDistance(source, target, allocator);
+    }
+
+    for (0..target_count) |i| {
+        try std.testing.expectEqual(expected[i], results[i]);
+    }
+
+    // Also verify some known values
+    try std.testing.expectEqual(@as(usize, 0), results[0]); // kitten -> kitten
+    try std.testing.expectEqual(@as(usize, 3), results[1]); // kitten -> sitting
+    try std.testing.expectEqual(@as(usize, 1), results[2]); // kitten -> mitten
+    try std.testing.expectEqual(@as(usize, 0), results[8]); // kitten -> kitten
+}
+
+test "parallelFuzzySearch above threshold" {
+    // Threshold is 16 candidates. Use 20 candidates to exercise the parallel path.
+    if (!build_options.enable_spice) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const query = "hello";
+    const candidate_count = 20;
+    const candidates = [candidate_count][]const u8{
+        "hello", // 0 - exact
+        "hallo", // 1
+        "world", // 4
+        "help", // 2
+        "shell", // 3
+        "yellow", // 2
+        "below", // 3
+        "mellow", // 2
+        "fellow", // 3
+        "cello", // 1
+        "jello", // 1
+        "helloo", // 1
+        "hell", // 1
+        "he", // 3
+        "hero", // 2
+        "heron", // 3
+        "melon", // 3
+        "hilly", // 2
+        "holly", // 2
+        "hullo", // 1
+    };
+    var results: [candidate_count]FuzzyResult = undefined;
+
+    // Verify we exceed the threshold
+    try std.testing.expect(candidate_count >= 16);
+
+    try parallelFuzzySearch(query, &candidates, &results, allocator);
+
+    // Compute expected via sequential edit distance for comparison
+    var expected_scores: [candidate_count]usize = undefined;
+    for (candidates, 0..) |candidate, i| {
+        expected_scores[i] = try editDistance(query, candidate, allocator);
+    }
+
+    for (0..candidate_count) |i| {
+        try std.testing.expectEqual(expected_scores[i], results[i].score);
+        try std.testing.expectEqual(i, results[i].index);
+    }
+
+    // Verify the exact match
+    try std.testing.expectEqual(@as(usize, 0), results[0].score);
+}
+
+test "parallelMap sequential fallback with small input" {
+    // parallelMap threshold is 10MB. A small input exercises the sequential fallback.
+    // This test verifies correctness of the sequential path.
+    const input = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    var output: [26]u8 = undefined;
+
+    try parallelMap(u8, input, &output, struct {
+        fn toLower(c: u8) u8 {
+            return if (c >= 'A' and c <= 'Z') c + 32 else c;
+        }
+    }.toLower);
+
+    try std.testing.expectEqualStrings("abcdefghijklmnopqrstuvwxyz", &output);
+}
+
+test "parallelCount empty needle returns zero" {
+    const haystack = "hello world";
+    try std.testing.expectEqual(@as(usize, 0), parallelCount(u8, haystack, ""));
+}
+
+test "parallelCount haystack shorter than needle returns zero" {
+    const haystack = "hi";
+    try std.testing.expectEqual(@as(usize, 0), parallelCount(u8, haystack, "hello"));
 }

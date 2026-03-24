@@ -42,6 +42,7 @@ pub const LineBreakIterator = struct {
     pos: usize,
     prev_class: ?LineBreakClass,
 
+    /// Creates a new line break opportunity iterator over the given UTF-8 text.
     pub fn init(text: []const u8) LineBreakIterator {
         return .{
             .text = text,
@@ -197,6 +198,8 @@ pub const LineBreakIterator = struct {
 pub fn findLineBreaks(allocator: std.mem.Allocator, text: []const u8) ![]usize {
     var breaks: std.ArrayList(usize) = .empty;
     errdefer breaks.deinit(allocator);
+    // Heuristic: roughly 1 break opportunity per 5 bytes (word boundaries).
+    try breaks.ensureTotalCapacity(allocator, if (text.len > 0) text.len / 5 + 1 else 1);
 
     var iter = lineBreakIterator(text);
     while (iter.next()) |brk| {

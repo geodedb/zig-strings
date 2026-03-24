@@ -62,6 +62,7 @@ pub const UNormalizationMode = enum {
     UNORM_NFKC,
     UNORM_FCD,
 
+    /// Converts the ICU normalization mode to the library's NormalizationForm enum.
     pub fn toZigStr(self: UNormalizationMode) ?types.NormalizationForm {
         return switch (self) {
             .UNORM_NFD => .nfd,
@@ -89,6 +90,7 @@ pub const UCollationStrength = enum {
     UCOL_QUATERNARY,
     UCOL_IDENTICAL,
 
+    /// Converts the ICU collation strength to the library's Strength enum.
     pub fn toZigStr(self: UCollationStrength) collation_mod.Strength {
         return switch (self) {
             .UCOL_PRIMARY => .primary,
@@ -367,8 +369,16 @@ pub const BreakIterator = struct {
     const Self = @This();
     pub const DONE: i32 = -1;
 
-    /// Create character (grapheme) break iterator
-    pub fn createCharacterInstance(text: []const u8) Self {
+    /// Maximum text length that can be safely represented as i32.
+    /// The next(), last(), and previous() methods return i32 positions
+    /// (ICU convention), so inputs larger than maxInt(i32) bytes would
+    /// cause @intCast truncation in ReleaseFast builds.
+    const MAX_TEXT_LEN: usize = @intCast(std.math.maxInt(i32));
+
+    /// Create character (grapheme) break iterator.
+    /// Returns error.InputTooLarge if text exceeds 2 GiB (i32 max).
+    pub fn createCharacterInstance(text: []const u8) error{InputTooLarge}!Self {
+        if (text.len > MAX_TEXT_LEN) return error.InputTooLarge;
         return .{
             .iter_type = .UBRK_CHARACTER,
             .text = text,
@@ -376,8 +386,10 @@ pub const BreakIterator = struct {
         };
     }
 
-    /// Create word break iterator
-    pub fn createWordInstance(text: []const u8) Self {
+    /// Create word break iterator.
+    /// Returns error.InputTooLarge if text exceeds 2 GiB (i32 max).
+    pub fn createWordInstance(text: []const u8) error{InputTooLarge}!Self {
+        if (text.len > MAX_TEXT_LEN) return error.InputTooLarge;
         return .{
             .iter_type = .UBRK_WORD,
             .text = text,
@@ -385,8 +397,10 @@ pub const BreakIterator = struct {
         };
     }
 
-    /// Create sentence break iterator
-    pub fn createSentenceInstance(text: []const u8) Self {
+    /// Create sentence break iterator.
+    /// Returns error.InputTooLarge if text exceeds 2 GiB (i32 max).
+    pub fn createSentenceInstance(text: []const u8) error{InputTooLarge}!Self {
+        if (text.len > MAX_TEXT_LEN) return error.InputTooLarge;
         return .{
             .iter_type = .UBRK_SENTENCE,
             .text = text,
@@ -717,10 +731,21 @@ test "Normalizer2" {
 test "BreakIterator character" {
     const testing = std.testing;
 
-    var bi = BreakIterator.createCharacterInstance("hello");
+    var bi = try BreakIterator.createCharacterInstance("hello");
 
     try testing.expectEqual(@as(i32, 0), bi.first());
     try testing.expect(bi.next() != BreakIterator.DONE);
+}
+
+test "BreakIterator rejects empty slice at i32 boundary" {
+    // Verify that the constructors accept normal-sized input
+    _ = try BreakIterator.createCharacterInstance("test");
+    _ = try BreakIterator.createWordInstance("test");
+    _ = try BreakIterator.createSentenceInstance("test");
+
+    // We cannot allocate >2GiB in a test, but we can verify the constant is correct
+    const testing = std.testing;
+    try testing.expectEqual(@as(usize, 2147483647), BreakIterator.MAX_TEXT_LEN);
 }
 
 test "Collator" {

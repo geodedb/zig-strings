@@ -30,6 +30,20 @@
 const std = @import("std");
 const unicode = std.unicode;
 
+/// Maximum input length for stack-based Jaro/Jaro-Winkler computation.
+/// Inputs exceeding this length cause `jaro()` and `jaroWinkler()` to return 0.0.
+const MAX_JARO_LEN = 256;
+
+/// Maximum input length for stack-based Levenshtein, LCS, and longest-common-substring
+/// computation. Inputs longer than `MAX_STACK_LEN - 1` (1023) bytes are silently truncated
+/// via `@min`. For longer inputs, use the allocator-backed variants (e.g. `levenshteinAlloc`).
+const MAX_STACK_LEN = 1024;
+
+/// Maximum input length for the full Damerau-Levenshtein (with transpositions) algorithm.
+/// For inputs longer than this, `damerauLevenshtein()` falls back to standard Levenshtein
+/// distance, which does not count transpositions as a single edit.
+const MAX_DAMERAU_LEN = 32;
+
 /// Result of a fuzzy search
 pub const FuzzyMatch = struct {
     /// The matched string
@@ -48,13 +62,17 @@ pub const FuzzyMatch = struct {
 /// Calculate Levenshtein edit distance between two strings.
 /// Returns the minimum number of single-character edits (insertions,
 /// deletions, or substitutions) needed to transform one string into another.
+///
+/// **Stack-size limit:** inputs longer than `MAX_STACK_LEN - 1` (1023) bytes
+/// are silently truncated to 1023 bytes before comparison. For longer inputs,
+/// use `levenshteinAlloc`, which heap-allocates its working memory.
 pub fn levenshtein(a: []const u8, b: []const u8) usize {
     if (a.len == 0) return b.len;
     if (b.len == 0) return a.len;
 
     // Use two-row optimization
-    var prev_row: [1024]usize = undefined;
-    var curr_row: [1024]usize = undefined;
+    var prev_row: [MAX_STACK_LEN]usize = undefined;
+    var curr_row: [MAX_STACK_LEN]usize = undefined;
 
     const m = @min(a.len, prev_row.len - 1);
     const n = @min(b.len, curr_row.len - 1);
@@ -135,6 +153,12 @@ pub fn levenshteinAlloc(allocator: std.mem.Allocator, a: []const u8, b: []const 
 
 /// Calculate Damerau-Levenshtein distance.
 /// Like Levenshtein, but also allows transpositions of adjacent characters.
+///
+/// **Fallback behaviour:** for inputs longer than `MAX_DAMERAU_LEN` (32) bytes,
+/// the function falls back to standard Levenshtein distance, which does **not**
+/// count transpositions of adjacent characters as a single edit. Callers needing
+/// true Damerau-Levenshtein distance for longer strings should implement a
+/// heap-allocated version.
 pub fn damerauLevenshtein(a: []const u8, b: []const u8) usize {
     if (a.len == 0) return b.len;
     if (b.len == 0) return a.len;
@@ -143,8 +167,8 @@ pub fn damerauLevenshtein(a: []const u8, b: []const u8) usize {
     const n = b.len;
 
     // Use fixed-size arrays for small strings
-    if (m <= 32 and n <= 32) {
-        var d: [33][33]usize = undefined;
+    if (m <= MAX_DAMERAU_LEN and n <= MAX_DAMERAU_LEN) {
+        var d: [MAX_DAMERAU_LEN + 1][MAX_DAMERAU_LEN + 1]usize = undefined;
 
         for (0..m + 1) |i| {
             d[i][0] = i;
@@ -193,17 +217,24 @@ pub fn hamming(a: []const u8, b: []const u8) ?usize {
 
 /// Calculate Jaro similarity between two strings.
 /// Returns a value between 0.0 (no similarity) and 1.0 (identical).
+///
+/// **Stack-size limit:** if either input exceeds `MAX_JARO_LEN` (256) bytes,
+/// the function returns 0.0 instead of risking an out-of-bounds write on the
+/// fixed-size match arrays. Use a heap-allocated implementation for longer inputs.
 pub fn jaro(a: []const u8, b: []const u8) f64 {
     if (a.len == 0 and b.len == 0) return 1.0;
     if (a.len == 0 or b.len == 0) return 0.0;
+
+    // Guard: inputs must fit in fixed-size match arrays
+    if (a.len > MAX_JARO_LEN or b.len > MAX_JARO_LEN) return 0.0;
 
     const match_distance = @max(a.len, b.len) / 2;
     if (match_distance == 0) {
         return if (a[0] == b[0]) 1.0 else 0.0;
     }
 
-    var a_matches: [256]bool = [_]bool{false} ** 256;
-    var b_matches: [256]bool = [_]bool{false} ** 256;
+    var a_matches: [MAX_JARO_LEN]bool = [_]bool{false} ** MAX_JARO_LEN;
+    var b_matches: [MAX_JARO_LEN]bool = [_]bool{false} ** MAX_JARO_LEN;
 
     var matches: f64 = 0;
     var transpositions: f64 = 0;
@@ -275,12 +306,15 @@ pub fn levenshteinSimilarity(a: []const u8, b: []const u8) f64 {
 }
 
 /// Find the longest common subsequence length.
+///
+/// **Stack-size limit:** inputs longer than `MAX_STACK_LEN - 1` (1023) bytes
+/// are silently truncated to 1023 bytes before comparison.
 pub fn lcsLength(a: []const u8, b: []const u8) usize {
     if (a.len == 0 or b.len == 0) return 0;
 
     // Use two-row optimization
-    var prev_row: [1024]usize = [_]usize{0} ** 1024;
-    var curr_row: [1024]usize = [_]usize{0} ** 1024;
+    var prev_row: [MAX_STACK_LEN]usize = [_]usize{0} ** MAX_STACK_LEN;
+    var curr_row: [MAX_STACK_LEN]usize = [_]usize{0} ** MAX_STACK_LEN;
 
     const m = @min(a.len, prev_row.len);
     const n = @min(b.len, curr_row.len);
@@ -315,12 +349,15 @@ pub fn lcsSimilarity(a: []const u8, b: []const u8) f64 {
 }
 
 /// Find the longest common substring length.
+///
+/// **Stack-size limit:** inputs longer than `MAX_STACK_LEN - 1` (1023) bytes
+/// are silently truncated to 1023 bytes before comparison.
 pub fn longestCommonSubstring(a: []const u8, b: []const u8) usize {
     if (a.len == 0 or b.len == 0) return 0;
 
     var max_len: usize = 0;
-    var prev_row: [1024]usize = [_]usize{0} ** 1024;
-    var curr_row: [1024]usize = [_]usize{0} ** 1024;
+    var prev_row: [MAX_STACK_LEN]usize = [_]usize{0} ** MAX_STACK_LEN;
+    var curr_row: [MAX_STACK_LEN]usize = [_]usize{0} ** MAX_STACK_LEN;
 
     const m = @min(a.len, prev_row.len);
     const n = @min(b.len, curr_row.len);
@@ -657,4 +694,26 @@ test "Levenshtein similarity" {
     try testing.expect(levenshteinSimilarity("", "") == 1.0);
     try testing.expect(levenshteinSimilarity("hello", "hello") == 1.0);
     try testing.expect(levenshteinSimilarity("abc", "xyz") < 0.1);
+}
+
+test "jaro bounds guard for strings > 256 bytes" {
+    const testing = std.testing;
+
+    // Create a 257-byte string (exceeds MAX_JARO_LEN of 256)
+    const long_string = "a" ** 257;
+
+    // jaro() must return 0.0 for oversized inputs instead of OOB write
+    try testing.expectEqual(@as(f64, 0.0), jaro(long_string, "hello"));
+    try testing.expectEqual(@as(f64, 0.0), jaro("hello", long_string));
+    try testing.expectEqual(@as(f64, 0.0), jaro(long_string, long_string));
+
+    // jaroWinkler() delegates to jaro(), so it must also return 0.0
+    try testing.expectEqual(@as(f64, 0.0), jaroWinkler(long_string, "hello"));
+    try testing.expectEqual(@as(f64, 0.0), jaroWinkler("hello", long_string));
+    try testing.expectEqual(@as(f64, 0.0), jaroWinkler(long_string, long_string));
+
+    // Exactly 256 bytes should still work (boundary case)
+    const exact_string = "a" ** 256;
+    try testing.expect(jaro(exact_string, exact_string) == 1.0);
+    try testing.expect(jaroWinkler(exact_string, exact_string) == 1.0);
 }

@@ -19,6 +19,24 @@ pub const StringError = types.StringError;
 pub const TrimOptions = types.TrimOptions;
 pub const SplitOptions = types.SplitOptions;
 
+/// Builds a 256-element boolean lookup table from a UTF-8 encoded character set.
+/// Only ASCII codepoints (< 128) are indexed in the table. Returns the table and
+/// a flag indicating whether all codepoints in the set were ASCII (i.e. the table
+/// is a complete representation of the set).
+fn buildAsciiLookup(chars: []const u8) struct { table: [256]bool, all_ascii: bool } {
+    var table = [_]bool{false} ** 256;
+    var all_ascii = true;
+    var iter = utf8.iterator(chars);
+    while (iter.next()) |cp| {
+        if (cp < 128) {
+            table[@intCast(cp)] = true;
+        } else {
+            all_ascii = false;
+        }
+    }
+    return .{ .table = table, .all_ascii = all_ascii };
+}
+
 /// Splits a string by a delimiter
 pub fn split(allocator: std.mem.Allocator, str: []const u8, delimiter: []const u8) ![][]const u8 {
     return splitWithOptions(allocator, str, delimiter, .{});
@@ -33,6 +51,9 @@ pub fn splitWithOptions(
 ) ![][]const u8 {
     var parts: std.ArrayList([]const u8) = .empty;
     errdefer parts.deinit(allocator);
+    // Pre-allocate for a reasonable number of parts; str.len / 4 is a
+    // heuristic upper bound (every part is at least 1 byte + delimiter).
+    try parts.ensureTotalCapacity(allocator, if (str.len > 0) str.len / 4 + 1 else 1);
 
     var iter = iter_mod.split(str, delimiter);
     var count: usize = 0;
@@ -132,45 +153,67 @@ pub fn trimChars(str: []const u8, chars: []const u8) []const u8 {
     return trimRightChars(trimLeftChars(str, chars), chars);
 }
 
-/// Trims specified characters from the left
+/// Trims specified characters from the left.
+/// Uses a 256-element lookup table for O(1) ASCII membership testing,
+/// falling back to linear scan only for non-ASCII codepoints in the set.
 pub fn trimLeftChars(str: []const u8, chars: []const u8) []const u8 {
+    const lookup = buildAsciiLookup(chars);
     var iter = utf8.iterator(str);
 
     while (iter.nextWithIndex()) |result| {
-        // Check if this code point is in chars
-        var found = false;
-        var char_iter = utf8.iterator(chars);
-        while (char_iter.next()) |char_cp| {
-            if (result.cp == char_cp) {
-                found = true;
-                break;
+        if (result.cp < 128) {
+            // ASCII fast-path: O(1) lookup
+            if (!lookup.table[@intCast(result.cp)]) {
+                return str[result.index..];
             }
-        }
-        if (!found) {
+        } else if (lookup.all_ascii) {
+            // Non-ASCII codepoint but the char set is all ASCII -- not a match
             return str[result.index..];
+        } else {
+            // Non-ASCII codepoint with non-ASCII chars in set: linear scan
+            var found = false;
+            var char_iter = utf8.iterator(chars);
+            while (char_iter.next()) |char_cp| {
+                if (result.cp == char_cp) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                return str[result.index..];
+            }
         }
     }
 
     return str[str.len..];
 }
 
-/// Trims specified characters from the right
+/// Trims specified characters from the right.
+/// Uses a 256-element lookup table for O(1) ASCII membership testing,
+/// falling back to linear scan only for non-ASCII codepoints in the set.
 pub fn trimRightChars(str: []const u8, chars: []const u8) []const u8 {
     if (str.len == 0) return str;
 
+    const lookup = buildAsciiLookup(chars);
     var end = str.len;
     var iter = iter_mod.codepointsReverse(str);
 
     while (iter.next()) |cp| {
-        // Check if this code point is in chars
-        var found = false;
-        var char_iter = utf8.iterator(chars);
-        while (char_iter.next()) |char_cp| {
-            if (cp == char_cp) {
-                found = true;
-                break;
+        const found = if (cp < 128)
+            // ASCII fast-path: O(1) lookup
+            lookup.table[@intCast(cp)]
+        else if (lookup.all_ascii)
+            // Non-ASCII codepoint but the char set is all ASCII -- not a match
+            false
+        else blk: {
+            // Non-ASCII codepoint with non-ASCII chars in set: linear scan
+            var char_iter = utf8.iterator(chars);
+            while (char_iter.next()) |char_cp| {
+                if (cp == char_cp) break :blk true;
             }
-        }
+            break :blk false;
+        };
+
         if (!found) {
             return str[0..end];
         }
@@ -264,6 +307,7 @@ pub fn reverse(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
     // Collect grapheme clusters
     var clusters: std.ArrayList([]const u8) = .empty;
     defer clusters.deinit(allocator);
+    try clusters.ensureTotalCapacity(allocator, str.len);
 
     var iter = grapheme.iterator(str);
     while (iter.next()) |cluster| {
@@ -290,7 +334,14 @@ pub fn replace(allocator: std.mem.Allocator, str: []const u8, old: []const u8, n
     return replaceN(allocator, str, old, new, 0);
 }
 
-/// Replaces up to n occurrences of a substring (0 = unlimited)
+/// Replaces up to n occurrences of a substring (0 = unlimited).
+///
+/// Implementation note: This function intentionally scans the string twice.
+/// The first pass counts occurrences to compute the exact output size, enabling
+/// a single allocation with no reallocations or over-allocation. This avoids
+/// the overhead of ArrayList growth (repeated realloc + copy) which would be
+/// more expensive than the extra traversal for most workloads. The trade-off
+/// is ~1.5x scan cost vs. zero reallocation cost -- a net win in practice.
 pub fn replaceN(allocator: std.mem.Allocator, str: []const u8, old: []const u8, new: []const u8, max_replacements: usize) ![]u8 {
     if (old.len == 0) {
         const result = try allocator.alloc(u8, str.len);
@@ -472,6 +523,7 @@ pub fn fieldsFunc(
 ) ![][]const u8 {
     var result: std.ArrayList([]const u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, if (str.len > 0) str.len / 4 + 1 else 1);
 
     var iter = utf8.iterator(str);
     var field_start: ?usize = null;
@@ -529,6 +581,7 @@ pub fn splitAfterN(allocator: std.mem.Allocator, str: []const u8, sep: []const u
         // Split after each character (grapheme)
         var result: std.ArrayList([]const u8) = .empty;
         errdefer result.deinit(allocator);
+        try result.ensureTotalCapacity(allocator, if (str.len > 0) str.len / 4 + 1 else 1);
 
         var iter = grapheme.iterator(str);
         var count: isize = 0;
@@ -547,6 +600,7 @@ pub fn splitAfterN(allocator: std.mem.Allocator, str: []const u8, sep: []const u
 
     var result: std.ArrayList([]const u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, if (str.len > 0) str.len / 4 + 1 else 1);
 
     var pos: usize = 0;
     var count: isize = 0;
@@ -577,6 +631,7 @@ pub fn mapFunc(
 ) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, str.len);
 
     var iter = utf8.iterator(str);
     while (iter.next()) |cp| {
@@ -636,6 +691,7 @@ pub fn trimFunc(str: []const u8, predicate: *const fn (Codepoint) bool) []const 
 pub fn toValidUtf8(allocator: std.mem.Allocator, str: []const u8, replacement: []const u8) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, str.len);
 
     var i: usize = 0;
     while (i < str.len) {
@@ -669,15 +725,27 @@ pub fn toValidUtf8(allocator: std.mem.Allocator, str: []const u8, replacement: [
 }
 
 /// Checks if a string contains any of the specified characters.
+/// Uses a 256-element lookup table for O(1) ASCII membership testing,
+/// falling back to linear scan only for non-ASCII codepoints in the set.
 pub fn containsAny(str: []const u8, chars: []const u8) bool {
+    const lookup = buildAsciiLookup(chars);
     var str_iter = utf8.iterator(str);
     while (str_iter.next()) |cp| {
-        var char_iter = utf8.iterator(chars);
-        while (char_iter.next()) |char_cp| {
-            if (cp == char_cp) {
+        if (cp < 128) {
+            // ASCII fast-path: O(1) lookup
+            if (lookup.table[@intCast(cp)]) {
                 return true;
             }
+        } else if (!lookup.all_ascii) {
+            // Non-ASCII codepoint with non-ASCII chars in set: linear scan
+            var char_iter = utf8.iterator(chars);
+            while (char_iter.next()) |char_cp| {
+                if (cp == char_cp) {
+                    return true;
+                }
+            }
         }
+        // If lookup.all_ascii and cp >= 128, no match possible -- skip
     }
     return false;
 }
@@ -930,6 +998,77 @@ test "containsFunc" {
 
     try testing.expect(containsFunc("hello123", isDigit));
     try testing.expect(!containsFunc("hello", isDigit));
+}
+
+// ============================================================================
+// Bitset lookup optimization tests (P2-8)
+// ============================================================================
+
+test "containsAny with large ASCII char set uses O(1) lookup" {
+    const testing = std.testing;
+
+    // All lowercase vowels -- tests ASCII fast-path
+    try testing.expect(containsAny("xyz hello", "aeiou"));
+    try testing.expect(!containsAny("xyz", "aeiou"));
+
+    // Large char set: all digits and punctuation
+    try testing.expect(containsAny("abc123", "0123456789!@#$%^&*()"));
+    try testing.expect(!containsAny("abcdef", "0123456789!@#$%^&*()"));
+}
+
+test "containsAny with non-ASCII chars" {
+    const testing = std.testing;
+
+    // Non-ASCII in char set: e-acute (U+00E9, "\xC3\xA9")
+    try testing.expect(containsAny("caf\xC3\xA9", "\xC3\xA9"));
+    try testing.expect(!containsAny("cafe", "\xC3\xA9"));
+}
+
+test "containsAny with mixed ASCII and non-ASCII char set" {
+    const testing = std.testing;
+
+    // Mixed set: 'a', 'b', and U+00E9
+    // "hello" does not contain 'a', 'b', or e-acute
+    try testing.expect(!containsAny("hello", "ab\xC3\xA9"));
+    // "hat" contains 'a'
+    try testing.expect(containsAny("hat", "ab\xC3\xA9"));
+    // "caf\xC3\xA9" contains both 'a' and e-acute
+    try testing.expect(containsAny("caf\xC3\xA9", "ab\xC3\xA9"));
+    try testing.expect(!containsAny("xyz", "ab\xC3\xA9"));
+}
+
+test "trimChars with large ASCII char set" {
+    const testing = std.testing;
+
+    // Trim many different ASCII chars
+    try testing.expectEqualSlices(u8, "hello", trimChars(".-=hello=-.", ".-="));
+    try testing.expectEqualSlices(u8, "", trimChars(".-=", ".-="));
+}
+
+test "trimChars with non-ASCII chars" {
+    const testing = std.testing;
+
+    // Trim non-ASCII: e-acute
+    try testing.expectEqualSlices(u8, "hello", trimChars("\xC3\xA9hello\xC3\xA9", "\xC3\xA9"));
+}
+
+test "trimChars with mixed ASCII and non-ASCII set" {
+    const testing = std.testing;
+
+    // Mixed: trim dots and e-acute
+    try testing.expectEqualSlices(u8, "hello", trimChars(".\xC3\xA9hello\xC3\xA9.", ".\xC3\xA9"));
+}
+
+test "trimLeftChars with empty string" {
+    const testing = std.testing;
+
+    try testing.expectEqualSlices(u8, "", trimLeftChars("", "abc"));
+}
+
+test "trimRightChars with empty string" {
+    const testing = std.testing;
+
+    try testing.expectEqualSlices(u8, "", trimRightChars("", "abc"));
 }
 
 // ============================================================================

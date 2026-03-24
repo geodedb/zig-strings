@@ -70,6 +70,7 @@ pub const Iterator = struct {
     units: []const u32,
     index: usize,
 
+    /// Creates a new UTF-32 iterator over the given code units.
     pub fn init(units: []const u32) Iterator {
         return .{ .units = units, .index = 0 };
     }

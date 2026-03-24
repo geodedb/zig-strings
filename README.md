@@ -7,7 +7,7 @@ A comprehensive Unicode string manipulation library for Zig with full UTF-8/UTF-
 | Aspect | Info |
 |--------|------|
 | API Stability | Beta |
-| Zig Version | 0.14.0+ |
+| Zig Version | 0.15.1+ |
 | Platforms | Linux, macOS, Windows |
 
 ## Features
@@ -22,7 +22,7 @@ A comprehensive Unicode string manipulation library for Zig with full UTF-8/UTF-
   - Case mapping and folding
   - Unicode Collation Algorithm (UTS #10)
   - Script detection (UAX #24)
-  - BiDi algorithm (UAX #9)
+  - Basic BiDi direction detection (partial UAX #9)
   - Line breaking (UAX #14)
   - Identifier syntax (UAX #31)
 - **Go-style String Functions** - Familiar API for Go developers
@@ -224,12 +224,12 @@ All planned features have been implemented:
 
 - UTF-8, UTF-16, UTF-32, ASCII, Latin-1 encoding/decoding
 - Small String Optimization (SSO)
-- Full Unicode Character Database tables
+- Unicode Character Database tables (simplified for some categories)
 - Text segmentation (grapheme, word, sentence)
 - Unicode normalization (NFC, NFD, NFKC, NFKD)
 - Case conversion and folding
-- Unicode Collation Algorithm
-- Script detection, BiDi, line breaking, identifier syntax
+- Collation (ASCII/Latin-1)
+- Script detection, basic BiDi direction detection, line breaking, identifier syntax
 - SIMD acceleration (AVX2/AVX-512)
 - String interning, rope data structure, memory-mapped strings
 - Regular expressions, fuzzy matching, phonetic algorithms

@@ -12,6 +12,7 @@
 //! GB18030 can encode all Unicode code points.
 
 const std = @import("std");
+const legacy_errors = @import("legacy_encoding_errors");
 
 /// Chinese encoding variants
 pub const ChineseEncoding = enum {
@@ -48,11 +49,7 @@ pub const ChineseEncoding = enum {
 };
 
 /// Errors that can occur during encoding/decoding
-pub const EncodingError = error{
-    InvalidSequence,
-    UnmappableCharacter,
-    OutOfMemory,
-};
+pub const EncodingError = legacy_errors.LegacyEncodingError;
 
 // ============================================================================
 // GB2312 Implementation
@@ -327,8 +324,15 @@ fn decode4ByteGB18030(b1: u8, b2: u8, b3: u8, b4: u8) u21 {
 
 /// Encode Unicode to 4-byte GB18030
 fn encode4ByteGB18030(codepoint: u21) [4]u8 {
-    const linear = unicodeToGB18030Linear(codepoint);
+    // Guard against codepoints beyond the valid Unicode range (U+10FFFF).
+    // unicodeToGB18030Linear can return values that overflow u8 byte
+    // calculations for invalid codepoints above 0x10FFFF.
+    const safe_cp: u21 = if (codepoint > 0x10FFFF) 0xFFFD else codepoint;
+    const linear = unicodeToGB18030Linear(safe_cp);
 
+    // After clamping to valid Unicode, the maximum linear value is bounded:
+    // max linear = 39420 + (0x10FFFF - 0x10000) = 1087995
+    // b1 max = 1087995 / 12600 + 0x81 = 86 + 129 = 215, fits in u8
     const b1: u8 = @intCast((linear / 12600) + 0x81);
     const rem1 = linear % 12600;
     const b2: u8 = @intCast((rem1 / 1260) + 0x30);
@@ -365,7 +369,10 @@ fn gb18030LinearToUnicode(linear: u32) u21 {
     } else {
         // Supplementary planes (linear mapping)
         const offset = linear - 39420;
-        return @intCast(0x10000 + offset);
+        const result = 0x10000 + offset;
+        // Guard: return replacement character if the linear index maps
+        // beyond the valid Unicode range (U+10FFFF)
+        return std.math.cast(u21, result) orelse 0xFFFD;
     }
 }
 

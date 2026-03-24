@@ -308,6 +308,7 @@ pub const LazyStringPool = struct {
 
     const Self = @This();
 
+    /// Creates an empty lazy string pool with the given allocator.
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .strings = std.ArrayList(LazyString).init(allocator),
@@ -315,6 +316,7 @@ pub const LazyStringPool = struct {
         };
     }
 
+    /// Frees all pooled strings and the pool itself.
     pub fn deinit(self: *Self) void {
         for (self.strings.items) |*s| {
             s.deinit();

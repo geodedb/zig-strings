@@ -16,6 +16,7 @@
 //! - Symbols, punctuation, and other special characters
 
 const std = @import("std");
+const legacy_errors = @import("legacy_encoding_errors");
 
 /// Big5 encoding variants
 pub const Big5Encoding = enum {
@@ -48,11 +49,7 @@ pub const Big5Encoding = enum {
 };
 
 /// Errors that can occur during encoding/decoding
-pub const EncodingError = error{
-    InvalidSequence,
-    UnmappableCharacter,
-    OutOfMemory,
-};
+pub const EncodingError = legacy_errors.LegacyEncodingError;
 
 // ============================================================================
 // Big5 Implementation

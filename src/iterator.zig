@@ -39,6 +39,7 @@ pub const LineIterator = struct {
     index: usize,
     include_terminator: bool,
 
+    /// Creates a new line iterator over the given UTF-8 bytes.
     pub fn init(bytes: []const u8, options: LineOptions) LineIterator {
         return .{
             .bytes = bytes,
@@ -47,6 +48,7 @@ pub const LineIterator = struct {
         };
     }
 
+    /// Returns the next line, or null when the input is exhausted.
     pub fn next(self: *LineIterator) ?[]const u8 {
         if (self.index >= self.bytes.len) {
             return null;
@@ -87,6 +89,7 @@ pub const LineIterator = struct {
         return self.bytes[start..];
     }
 
+    /// Resets the iterator to the beginning of the input.
     pub fn reset(self: *LineIterator) void {
         self.index = 0;
     }
@@ -133,6 +136,7 @@ pub const ReverseCodepointIterator = struct {
     bytes: []const u8,
     index: usize,
 
+    /// Creates a reverse iterator starting at the end of the input.
     pub fn init(bytes: []const u8) ReverseCodepointIterator {
         return .{
             .bytes = bytes,
@@ -140,6 +144,7 @@ pub const ReverseCodepointIterator = struct {
         };
     }
 
+    /// Returns the previous code point (iterating backward), or null at start.
     pub fn next(self: *ReverseCodepointIterator) ?Codepoint {
         if (self.index == 0) {
             return null;
@@ -160,6 +165,7 @@ pub const ReverseCodepointIterator = struct {
         return result.value;
     }
 
+    /// Resets the iterator to the end of the input.
     pub fn reset(self: *ReverseCodepointIterator) void {
         self.index = self.bytes.len;
     }
@@ -177,6 +183,7 @@ pub const SplitIterator = struct {
     index: ?usize,
     done: bool,
 
+    /// Creates a split iterator that yields substrings between delimiter occurrences.
     pub fn init(bytes: []const u8, delimiter: []const u8) SplitIterator {
         return .{
             .bytes = bytes,
@@ -186,6 +193,7 @@ pub const SplitIterator = struct {
         };
     }
 
+    /// Returns the next substring between delimiters, or null when exhausted.
     pub fn next(self: *SplitIterator) ?[]const u8 {
         if (self.done) return null;
 
@@ -203,6 +211,7 @@ pub const SplitIterator = struct {
         return self.bytes[start..];
     }
 
+    /// Resets the iterator to the beginning of the input.
     pub fn reset(self: *SplitIterator) void {
         self.index = 0;
         self.done = false;
@@ -220,6 +229,7 @@ pub const ChunkIterator = struct {
     chunk_size: usize,
     index: usize,
 
+    /// Creates a chunk iterator yielding slices of at most `chunk_size` bytes.
     pub fn init(bytes: []const u8, chunk_size: usize) ChunkIterator {
         return .{
             .bytes = bytes,
@@ -228,6 +238,7 @@ pub const ChunkIterator = struct {
         };
     }
 
+    /// Returns the next chunk, or null when the input is exhausted.
     pub fn next(self: *ChunkIterator) ?[]const u8 {
         if (self.index >= self.bytes.len) {
             return null;
@@ -239,6 +250,7 @@ pub const ChunkIterator = struct {
         return chunk;
     }
 
+    /// Resets the iterator to the beginning of the input.
     pub fn reset(self: *ChunkIterator) void {
         self.index = 0;
     }

@@ -464,7 +464,7 @@ test "ICU Normalizer2 NFC" {
 
 test "ICU BreakIterator character" {
     // Create character break iterator
-    var bi = icu.BreakIterator.createCharacterInstance("Hello");
+    var bi = try icu.BreakIterator.createCharacterInstance("Hello");
 
     var count: usize = 0;
     while (bi.next() != icu.BreakIterator.DONE) {
@@ -476,7 +476,7 @@ test "ICU BreakIterator character" {
 
 test "ICU BreakIterator word" {
     // Create word break iterator
-    var bi = icu.BreakIterator.createWordInstance("Hello World");
+    var bi = try icu.BreakIterator.createWordInstance("Hello World");
 
     var count: usize = 0;
     while (bi.next() != icu.BreakIterator.DONE) {

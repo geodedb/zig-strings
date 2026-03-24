@@ -35,6 +35,7 @@ pub const Node = union(enum) {
         data: []const u8,
         owned: bool, // Whether we own the data and should free it
 
+        /// Frees the leaf data if owned.
         pub fn deinit(self: *Leaf, allocator: std.mem.Allocator) void {
             if (self.owned) {
                 allocator.free(self.data);
@@ -48,6 +49,7 @@ pub const Node = union(enum) {
         len: usize, // Total length of this subtree
         depth: u32, // Height of subtree for balancing
 
+        /// Recursively frees both child subtrees.
         pub fn deinit(self: *Branch, allocator: std.mem.Allocator) void {
             self.left.deinit(allocator);
             allocator.destroy(self.left);
@@ -56,6 +58,7 @@ pub const Node = union(enum) {
         }
     };
 
+    /// Frees this node and all owned children.
     pub fn deinit(self: *Node, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .leaf => |*l| l.deinit(allocator),
@@ -63,6 +66,7 @@ pub const Node = union(enum) {
         }
     }
 
+    /// Returns the total byte length of this subtree.
     pub fn len(self: Node) usize {
         return switch (self) {
             .leaf => |l| l.data.len,
@@ -70,6 +74,7 @@ pub const Node = union(enum) {
         };
     }
 
+    /// Returns the depth (height) of this subtree for balancing.
     pub fn depth(self: Node) u32 {
         return switch (self) {
             .leaf => 0,
@@ -343,6 +348,7 @@ pub const Rope = struct {
         current_leaf: ?[]const u8,
         leaf_index: usize,
 
+        /// Creates a new byte iterator over the rope's contents.
         pub fn init(rope: Rope) Iterator {
             var iter = Iterator{
                 .stack = std.ArrayList(*const Node).init(rope.allocator),
@@ -357,10 +363,12 @@ pub const Rope = struct {
             return iter;
         }
 
+        /// Frees the iterator's traversal stack.
         pub fn deinit(self: *Iterator) void {
             self.stack.deinit();
         }
 
+        /// Returns the next byte, or null when the rope is fully traversed.
         pub fn next(self: *Iterator) ?u8 {
             // Try to get from current leaf
             if (self.current_leaf) |leaf| {

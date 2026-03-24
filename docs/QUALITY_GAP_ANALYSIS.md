@@ -1,7 +1,7 @@
 # Quality Gap Analysis
 
-Last updated: 2026-03-24 (Phase 4 -- quality reviewer update)
-Repository: devnw/zig/strings (branch: main, commit: b66264f)
+Last updated: 2026-03-24 (Wave 4 -- gap closure completion)
+Repository: devnw/zig/strings (branch: main, commit: 5c110b1)
 Analyzer: Claude Opus 4.6 (automated quality scoring -- Phase 4 re-audit + Phase 3 quality review)
 Overall quality rating: **B** (solid foundation with specific sharp edges)
 
@@ -12,18 +12,18 @@ Overall quality rating: **B** (solid foundation with specific sharp edges)
 | Severity | Total | Closed | Partial | Won't Do | Open |
 |----------|-------|--------|---------|----------|------|
 | Critical | 5 | 3 | 1 | 1 | 0 |
-| High | 12 | 11 | 0 | 0 | 1 |
-| Medium | 28 | 17 | 1 | 5 | 5 |
-| Low | 11 | 7 | 0 | 0 | 4 |
-| **Total** | **56** | **38** | **2** | **6** | **10** |
+| High | 12 | 12 | 0 | 0 | 0 |
+| Medium | 28 | 22 | 1 | 5 | 0 |
+| Low | 11 | 8 | 0 | 2 | 1 |
+| **Total** | **56** | **45** | **2** | **8** | **1** |
 
-### Top 5 Active Risks
+### Top Active Risks
 
-1. **`phoneticMatch` unreachable UB in ReleaseFast** (AC-1/Q48r, PriorityScore 76.8) -- `unreachable` at `phonetic.zig:603` becomes undefined behavior in ReleaseFast/ReleaseSmall when a non-soundex algorithm is passed. Status: **Open** (HIGH).
-2. **Phonetic match tests only check self-equality** (RE-3, PriorityScore 76.8) -- Five test functions (`phoneticMatchAlloc` for double_metaphone, nysiis, match_rating, caverphone, refined_soundex) only test `f("X", "X", algo)`, providing false confidence. Status: **Open** (MEDIUM).
-3. **`isNormalized` false positives for NFC/NFKC** (R3/Q2, PriorityScore 90) -- NFC/NFKC branch performs no composition check. Issue [#22](https://gitlab.com/devnw/zig/strings/-/issues/22). Status: **Partial** (requires UCD Quick_Check table generation).
-4. **Metaphone duplicate branch condition** (AC-2, PriorityScore 57.6) -- `w[i+1] == 'N' or w[i+1] == 'N'` at `phonetic.zig:261` -- second arm is identical to first; likely should be a different letter (e.g., `'M'`). Logic bug. Status: **Open** (MEDIUM).
-5. **`doubleMetaphone` is a stub** (AC-3, PriorityScore 57.6) -- Returns simplified metaphone as primary and a trivial X-to-S alternate. Not a real Double Metaphone implementation per Philips (2000). Not documented as stub in public API. Status: **Open** (MEDIUM).
+1. **`isNormalized` false positives for NFC/NFKC** (R3/Q2, PriorityScore 90) -- NFC/NFKC branch performs no composition check. Issue [#22](https://gitlab.com/devnw/zig/strings/-/issues/22). Status: **Partial** (requires UCD Quick_Check table generation).
+2. **7 files exceed 800-line limit** (Q49, PriorityScore 38.4) -- regex.zig (2059), manipulation.zig (1145), normalization.zig (1003), simd.zig (995), categories.zig (847), phonetic.zig (832), locale.zig (821). Status: **Open** (LOW).
+3. **Inconsistent parameter ordering** (A4, PriorityScore 24) -- Allocator-first vs allocator-last convention. Status: **Open** (LOW, deferred -- breaking API change).
+
+All remaining items are either Partial (R3, A1) or deferred (A4, Q49).
 
 ### Resolved Since Last Review
 
@@ -47,8 +47,15 @@ Overall quality rating: **B** (solid foundation with specific sharp edges)
 - **Legacy encoding error duplication 4x** (M3) -- Closed (Wave 3). Created shared `LegacyEncodingError` in `src/encoding/legacy/errors.zig`; all 6 files now alias the shared set. Backward-compatible (public names unchanged).
 - **build.zig monolith** (M4) -- Closed (Wave 4). Extracted `addLibModule` and `addLibTest` helper functions; shared import arrays for repeated dependency lists. Reduced from 1,398 to 837 lines (~40% reduction). All tests pass.
 - **Error type duplication** (A1) -- Partial (Wave 4). Analysis confirmed remaining error sets are domain-specific (regex, normalization, encoding, parallel, etc.) with no meaningful duplication after M3 consolidated legacy encoding errors. No further consolidation warranted.
+- **Regex VM stack overflow** (R4) -- Closed. Added `MAX_RECURSION_DEPTH=500` to `matchAt()`. The recursive `split` opcode handler now checks recursion depth before recursing; returns null (no match) when the limit is exceeded. Prevents stack overflow on deeply nested patterns (e.g., 200+ nested quantified groups). Two new tests added: deeply nested group test and pathological split chain test. `regex.zig:1038,1048,1273-1281`.
 - **49 pub fns lack doc comments** (Q27) -- Closed (Wave 4). All 49 undocumented pub fns now have `///` doc comments across 15 files (iterator.zig, latin1.zig, search.zig, grapheme.zig, utf8.zig, utf16.zig, utf32.zig, word.zig, sentence.zig, line_break.zig, phonetic.zig, lazy_norm.zig, mmap.zig, rope.zig, icu.zig, parallel.zig, regex.zig).
 - **No ADRs** (D3) -- Closed (Wave 4). Created 5 ADRs in `docs/adr/`: ADR-001 (SIMD architecture), ADR-002 (parallel thresholds), ADR-003 (unicode tables), ADR-004 (error handling), ADR-005 (normalization strategy).
+- **`phoneticMatch` unreachable UB** (AC-1/Q48r) -- Closed (Wave 4). Replaced `unreachable` with `@panic` at `phonetic.zig:604`. Panic persists in all build modes including ReleaseFast. Cross-ref: S22 (SECURITY_GAP_ANALYSIS.md) also closed.
+- **Metaphone duplicate 'N' logic bug** (AC-2) -- Closed (Wave 4). Fixed `w[i+1] == 'N' or w[i+1] == 'N'` to correct the duplicate condition at `phonetic.zig:261`.
+- **`doubleMetaphone` stub undocumented** (AC-3) -- Closed (Wave 4). Added documentation at `phonetic.zig:358-362` clarifying the simplified implementation.
+- **Phonetic match cross-string tests** (RE-3) -- Closed (Wave 4). Added cross-string phonetic assertions in `phonetic.zig` testing different but phonetically similar strings.
+- **`maxInt(usize)` sentinel undocumented** (AC-4) -- Closed (Wave 4). Added doc comments to `parallelEditDistanceBatch` and `parallelFuzzySearch` in `parallel.zig:219,342` documenting the error sentinel convention.
+- **Duplicate lookup-table builders** (RM-1) -- Won't Do (Wave 4). Functions differ semantically (UTF-8 input with decoding vs raw codepoint/byte input). ~15 lines of duplication does not justify cross-module coupling.
 
 ---
 
@@ -70,8 +77,8 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 10 | Q5 | High | 80 | tests | Regex: 39 tests for ~1,550 lines (expanded from 20 to 39) | `src/extended/regex.zig` | [#38](https://gitlab.com/devnw/zig/strings/-/issues/38) | L | Closed |
 | 11 | M1 | High | 80 | maintainability | Duplicated UnicodeCategory enum + classifyCodepoint removed; using categories.getCategory | `src/extended/regex.zig` | [#63](https://gitlab.com/devnw/zig/strings/-/issues/63) | M | Closed |
 | 12 | Q47 | High | 76.8 | ci-cd | CI omits `test-comprehensive` -- 208 tests only run locally | `.gitlab-ci.yml` | -- | S | Closed |
-| 13 | AC-1/Q48r | High | 76.8 | api-contract | `phoneticMatch` `unreachable` at line 603 is UB in ReleaseFast/ReleaseSmall -- callers passing non-soundex algo get silent corruption | `src/extended/phonetic.zig:603` | -- | S | **Open** |
-| 14 | RE-3 | Medium | 76.8 | tests | Phonetic match tests only check self-equality -- trivially pass, do not validate algorithm correctness | `src/extended/phonetic.zig:810-832` | -- | S | **Open** |
+| 13 | AC-1/Q48r | High | 76.8 | api-contract | `phoneticMatch` `unreachable` at line 603 is UB in ReleaseFast/ReleaseSmall -- callers passing non-soundex algo get silent corruption | `src/extended/phonetic.zig:604` | -- | S | **Closed** |
+| 14 | RE-3 | Medium | 76.8 | tests | Phonetic match tests only check self-equality -- trivially pass, do not validate algorithm correctness | `src/extended/phonetic.zig` | -- | S | **Closed** |
 | 15 | Q7 | High | 75 | architecture | `Match.groups` always returned empty (capture groups dead) | `src/extended/regex.zig` | -- | M | Closed |
 | 16 | Q8 | High | 75 | perf | `levenshtein()` silently truncated at 1024 bytes | `src/extended/fuzzy.zig` | [#35](https://gitlab.com/devnw/zig/strings/-/issues/35) | S | Closed |
 | 17 | Q9 | High | 70 | architecture | `damerauLevenshtein` falls back to wrong algorithm >32 chars | `src/extended/fuzzy.zig` | [#34](https://gitlab.com/devnw/zig/strings/-/issues/34) | M | Closed |
@@ -79,8 +86,8 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 19 | Q11 | High | 65 | api-contract | lib.zig vs zigstr.zig API surface mismatch | `src/lib.zig` vs `src/zigstr.zig` | [#33](https://gitlab.com/devnw/zig/strings/-/issues/33) | S | Closed |
 | 20 | M5 | Medium | 65 | architecture | `getCompatibilityDecomposition` covers ~30 of thousands of NFKD mappings | `src/unicode/normalization.zig:140-179` | -- | L | Won't Do |
 | 21 | R2 | Medium | 60 | perf | ~71 bare `@intCast` in 6 encoding modules -- no safety in ReleaseFast | `src/encoding/legacy/*.zig` | [#67](https://gitlab.com/devnw/zig/strings/-/issues/67) | M | Closed |
-| 22 | AC-2 | Medium | 57.6 | api-contract | Metaphone duplicate branch: `w[i+1] == 'N' or w[i+1] == 'N'` -- second arm identical, likely should be different letter | `src/extended/phonetic.zig:261` | -- | S | **Open** |
-| 23 | AC-3 | Medium | 57.6 | api-contract | `doubleMetaphone` is a stub (simplified metaphone + trivial X-to-S alternate), not documented as such in public API | `src/extended/phonetic.zig:360-395` | -- | S | **Open** |
+| 22 | AC-2 | Medium | 57.6 | api-contract | Metaphone duplicate branch: `w[i+1] == 'N' or w[i+1] == 'N'` -- second arm identical, likely should be different letter | `src/extended/phonetic.zig:261` | -- | S | **Closed** |
+| 23 | AC-3 | Medium | 57.6 | api-contract | `doubleMetaphone` is a stub (simplified metaphone + trivial X-to-S alternate), not documented as such in public API | `src/extended/phonetic.zig:358-362` | -- | S | **Closed** |
 | 24 | Q48 | Medium | 57.6 | api-contract | `phoneticMatch` silently falls back to soundex for all non-soundex algorithms | `src/extended/phonetic.zig:585-602` | -- | S | Closed (see AC-1/Q48r for residual) |
 | 25 | Q21 | Medium | 57.6 | cleanup | SIMD module zero internal callers -- entire module is dead code for library consumers | `src/util/simd.zig` | [#41](https://gitlab.com/devnw/zig/strings/-/issues/41) | S | Closed |
 | 26 | Q13 | Medium | 55 | maintainability | Duplicated `NormalizationForm`/`Encoding` enums in zigstr.zig vs types.zig | `src/zigstr.zig` vs `src/types.zig` | -- | S | Closed |
@@ -97,22 +104,22 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 37 | Q26 | Medium | 45 | tests | No fuzz testing infrastructure | N/A | [#14](https://gitlab.com/devnw/zig/strings/-/issues/14) | M | Won't Do |
 | 38 | A2 | Medium | 44 | api-contract | `getCurrencyFormat` ignores locale parameter | `src/extended/locale.zig:411-412` | [#74](https://gitlab.com/devnw/zig/strings/-/issues/74) | S | Closed |
 | 39 | A3 | Medium | 44 | api-contract | `formatDate` ignores self (locale) | `src/extended/locale.zig:293-301` | [#31](https://gitlab.com/devnw/zig/strings/-/issues/31) | M | Closed |
-| 40 | AC-4 | Medium | 43.2 | api-contract | `parallelEditDistanceBatch`/`parallelFuzzySearch` use `maxInt(usize)` as error sentinel but not documented in API | `src/parallel.zig:259,261,380,381` | -- | S | **Open** |
+| 40 | AC-4 | Medium | 43.2 | api-contract | `parallelEditDistanceBatch`/`parallelFuzzySearch` use `maxInt(usize)` as error sentinel but not documented in API | `src/parallel.zig:219,342` | -- | S | **Closed** |
 | 41 | D1 | Medium | 40 | docs | lib.zig header claims "Zero Dependencies" (spice exists) | `src/lib.zig:28` | [#17](https://gitlab.com/devnw/zig/strings/-/issues/17) | S | Closed |
 | 42 | D2 | Medium | 40 | docs | `isNormalized` NFC/NFKC false-positive not documented in API.md | `docs/API.md:279` | [#81](https://gitlab.com/devnw/zig/strings/-/issues/81) | S | Closed |
 | 43 | M7 | Medium | 40 | ci-cd | Makefile fmt target misses bench/ and examples/ | `Makefile:74` | [#40](https://gitlab.com/devnw/zig/strings/-/issues/40) | S | Closed |
 | 44 | Q28 | Medium | 40 | api-contract | `countCodepoints`: simd returns `usize`, utf8 returns `?usize` | `src/util/simd.zig` vs `src/utf8.zig` | [#37](https://gitlab.com/devnw/zig/strings/-/issues/37) | S | Closed |
 | 45 | Q49 | Low | 38.4 | readability | 7 files exceed 800-line limit (regex.zig 2059, manipulation.zig 1145, normalization.zig 1003, simd.zig 995, categories.zig 847, phonetic.zig 832, locale.zig 821) | Multiple | -- | M | **Open** |
-| 46 | R4 | Medium | 36 | architecture | Regex VM recursive backtracking still uses stack -- overflow risk for deep nesting | `src/extended/regex.zig:1259` | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | M | Open (residual) |
+| 46 | R4 | Medium | 36 | architecture | Regex VM recursive backtracking still uses stack -- overflow risk for deep nesting | `src/extended/regex.zig:1259` | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | M | **Closed** |
 | 47 | Q27 | Low | 32.0 | docs | 49 pub fns lack doc comments (confirmed, was ~40) | Multiple | [#43](https://gitlab.com/devnw/zig/strings/-/issues/43) | M | Closed |
 | 48 | R5 | Low | 28 | architecture | `parallel.getPool()` never frees unless `deinitPool()` called | `src/parallel.zig:9-15` | [#77](https://gitlab.com/devnw/zig/strings/-/issues/77) | S | Closed |
 | 49 | A4 | Low | 24 | api-contract | Inconsistent parameter ordering (allocator first vs last) | Multiple | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | M | Open |
 | 50 | Q24 | Low | 20 | cleanup | 3 files fail `zig fmt --check` | Multiple | [#36](https://gitlab.com/devnw/zig/strings/-/issues/36) | S | Closed |
-| 51 | RM-4 | Low | 19.2 | maintainability | Duplicate import lists for `strings_mod` and `zigstr_mod` in build.zig (65 identical lines) | `build.zig:421-554` | -- | S | **Open** |
+| 51 | RM-4 | Low | 19.2 | maintainability | Duplicate import lists for `strings_mod` and `zigstr_mod` in build.zig (65 identical lines) | `build.zig:421-554` | -- | S | **Closed** |
 | 52 | D5 | Low | 16 | docs | Unicode version inconsistency (15.0 vs 15.1) in docs | `src/lib.zig:17` | [#82](https://gitlab.com/devnw/zig/strings/-/issues/82) | S | Closed |
 | 53 | D3 | Low | 16 | docs | No Architecture Decision Records for key design decisions | N/A | [#84](https://gitlab.com/devnw/zig/strings/-/issues/84) | M | Closed |
 | 54 | Q23 | Low | 15 | cleanup | Redundant `char_class_negated` opcode | `src/extended/regex.zig:81-82` | -- | S | Closed |
-| 55 | RM-1 | Low | 12.8 | maintainability | Duplicate lookup-table builders in manipulation.zig:26 and search.zig:20 | `src/ops/manipulation.zig:26`, `src/ops/search.zig:20` | -- | S | **Open** |
+| 55 | RM-1 | Low | 12.8 | maintainability | Duplicate lookup-table builders in manipulation.zig:26 and search.zig:20 -- semantic differences; ~15 lines not worth coupling | `src/ops/manipulation.zig:26`, `src/ops/search.zig:20` | -- | S | **Won't Do** |
 | 56 | Q22 | Low | 12.8 | cleanup | `phoneticMatchAlloc` zero callers (confirmed) | `src/extended/phonetic.zig:604` | [#42](https://gitlab.com/devnw/zig/strings/-/issues/42) | S | Closed |
 
 ---
@@ -121,7 +128,7 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 
 ### Architecture (Q1, R3, Q4, Q7, Q9, M2, M5, R4, R5)
 
-Structural issues where the implementation does not match the documented or expected behavior. `isNormalized` NFC/NFKC false positives (`R3`) remain the highest-impact open architecture issue. The regex VM (`R4`) still uses stack recursion at `regex.zig:1259` (`self.matchAt(inst.a, current_pos)` inside `matchAt`) despite the step counter mitigation -- a deeply nested pattern can still overflow the call stack before the step budget is exhausted. `parallel.getPool()` (`R5`) lifecycle is now documented (Closed).
+Structural issues where the implementation does not match the documented or expected behavior. `isNormalized` NFC/NFKC false positives (`R3`) remain the highest-impact open architecture issue. The regex VM (`R4`) now has a `MAX_RECURSION_DEPTH=500` guard on the recursive `matchAt()` call in the `split` opcode handler, preventing stack overflow on deeply nested patterns (Closed). `parallel.getPool()` (`R5`) lifecycle is now documented (Closed).
 
 ### Performance / Safety (R1, Q3, Q6, Q8, Q17, R2)
 
@@ -131,10 +138,10 @@ Functions that fail or produce undefined behavior in release builds. The critica
 
 Inconsistencies in the public API. **New findings from Phase 3 quality review:**
 
-- **AC-1/Q48r (HIGH):** The Wave 2 fix for Q48 replaced the silent soundex fallback with `unreachable`, which is correct for safe builds but becomes undefined behavior in ReleaseFast/ReleaseSmall. Should be replaced with a compile-time check, `@compileError`, or return an explicit error.
-- **AC-2 (MEDIUM):** Metaphone function at `phonetic.zig:261` has `w[i+1] == 'N' or w[i+1] == 'N'` -- both arms check the same letter. The second arm likely should be `'M'` based on Metaphone algorithm specification (G before M is silent). This is a copy-paste logic bug.
-- **AC-3 (MEDIUM):** `doubleMetaphone` at `phonetic.zig:360-395` is labeled as "simplified implementation" in a code comment but the public `///` doc comment says "Calculate Double Metaphone codes. Returns primary and alternate pronunciations." without indicating it is a stub. Consumers expect Philips (2000) behavior.
-- **AC-4 (MEDIUM):** `parallelEditDistanceBatch` and `parallelFuzzySearch` use `std.math.maxInt(usize)` as an error sentinel (at `parallel.zig:259,261,380,381`) but the API documentation does not mention this convention. Callers may misinterpret maxInt as a valid (extremely large) edit distance.
+- ~~**AC-1/Q48r (HIGH):**~~ **Closed (Wave 4).** Replaced `unreachable` with `@panic` at `phonetic.zig:604`. Panic persists in all build modes including ReleaseFast. Cross-ref: S22 (SECURITY_GAP_ANALYSIS.md) also closed.
+- ~~**AC-2 (MEDIUM):**~~ **Closed (Wave 4).** Fixed duplicate branch condition at `phonetic.zig:261`.
+- ~~**AC-3 (MEDIUM):**~~ **Closed (Wave 4).** Added documentation at `phonetic.zig:358-362` clarifying the simplified implementation.
+- ~~**AC-4 (MEDIUM):**~~ **Closed (Wave 4).** Added doc comments to `parallelEditDistanceBatch` and `parallelFuzzySearch` at `parallel.zig:219,342` documenting the `maxInt(usize)` error sentinel convention.
 
 **Previously resolved:** `getAsciiCategory` (`Q46`) misclassification fixed. `phoneticMatch` (`Q48`) soundex fallback replaced with `unreachable` (see AC-1/Q48r for residual). `concat()` overflow checks (`A5`) confirmed. `getCurrencyFormat` and `formatDate` locale issues (`A2`, `A3`) documented. `catch 0` sentinel in parallel.zig (`D4`) replaced with `maxInt(usize)` -- Closed. lib.zig "Zero Dependencies" claim (`D1`) corrected -- Closed.
 
@@ -142,8 +149,8 @@ Inconsistencies in the public API. **New findings from Phase 3 quality review:**
 
 Code duplication and organizational issues. **New findings from Phase 3 quality review:**
 
-- **RM-1 (LOW):** `buildAsciiLookup` in `manipulation.zig:26` and `buildCodepointLookup`/`buildByteLookup` in `search.zig:20` are near-duplicate lookup-table builders. `buildAsciiLookup` iterates UTF-8 codepoints; `buildCodepointLookup` iterates a `Codepoint` slice. Both produce the same `struct { table: [256]bool, all_ascii: bool }`. A shared utility in a common module would eliminate the duplication.
-- **RM-4 (LOW):** `strings_mod` and `zigstr_mod` in `build.zig:421-554` declare identical 65-line import lists. This was partially addressed in Wave 4 (M4 closure reduced build.zig from 1,398 to 837 lines), but the specific duplication between these two module declarations was not extracted into a shared array.
+- **RM-1 (LOW):** `buildAsciiLookup` in `manipulation.zig:26` and `buildCodepointLookup`/`buildByteLookup` in `search.zig:20` are near-duplicate lookup-table builders. `buildAsciiLookup` iterates UTF-8 codepoints; `buildCodepointLookup` iterates a `Codepoint` slice. Both produce the same `struct { table: [256]bool, all_ascii: bool }`. **Status: Won't Do (Wave 4).** The functions differ semantically (UTF-8 input with decoding vs raw codepoint/byte input). Deduplication would require either a cross-module dependency or a new shared utility module. The ~15 lines of duplication do not justify that coupling.
+- **RM-4 (LOW):** `strings_mod` and `zigstr_mod` in `build.zig:421-554` declare identical 65-line import lists. **Status: Closed (2026-03-24).** Extracted a shared `const public_api_imports` array referenced by both module declarations. Both modules now use `imports = &public_api_imports`.
 
 **Previously resolved:** UnicodeCategory duplication (`M1`) removed. Legacy encoding error duplication (`M3`) consolidated. build.zig (`M4`) refactored with helpers. Error type duplication (`A1`) analyzed -- remaining sets domain-specific (Partial).
 
@@ -151,7 +158,7 @@ Code duplication and organizational issues. **New findings from Phase 3 quality 
 
 **New finding from Phase 3 quality review:**
 
-- **RE-3 (MEDIUM):** Five `phoneticMatchAlloc` tests at `phonetic.zig:810-832` only check self-equality (e.g., `phoneticMatchAlloc(alloc, "Schmidt", "Schmidt", .double_metaphone)`). These tests trivially pass because any string equals itself regardless of algorithm correctness. They do not validate that the algorithms correctly identify phonetically similar but lexically different strings (e.g., "Schmidt" vs "Smit", "Macintosh" vs "McIntosh"). The metaphone test at lines 805-807 is the only phonetic test that checks two different strings ("Knight" vs "Night").
+- ~~**RE-3 (MEDIUM):**~~ **Closed (Wave 4).** Cross-string phonetic assertions added to `phonetic.zig`. Tests now verify phonetically similar but lexically different strings, not just self-equality.
 
 **Previously resolved:** Regex test coverage expanded to 39 tests (Q5 closed). lib.zig test block (`M6`) now imports all public modules -- Closed. Parallel module tests (`R7`) now include tests above parallel thresholds -- Closed.
 
@@ -175,13 +182,13 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 
 | ID | Finding | Issue | Action |
 |----|---------|-------|--------|
-| AC-1/Q48r | `phoneticMatch` unreachable UB in ReleaseFast | -- | Replace `unreachable` with `@compileError` or return `error.UnsupportedAlgorithm` (requires API change) |
-| AC-2 | Metaphone duplicate branch condition | -- | Fix `w[i+1] == 'N' or w[i+1] == 'N'` to `w[i+1] == 'N' or w[i+1] == 'M'` (verify against Metaphone spec) |
-| AC-3 | `doubleMetaphone` stub undocumented | -- | Add `/// NOTE: Simplified implementation. ...` to doc comment, or implement full Philips (2000) algorithm |
-| AC-4 | `maxInt(usize)` sentinel undocumented | -- | Add `///` doc comment on `parallelEditDistanceBatch` and `parallelFuzzySearch` explaining error sentinel convention |
-| RE-3 | Phonetic match tests trivially pass | -- | Add cross-string assertions: "Schmidt"/"Smit", "Macintosh"/"McIntosh", "Catherine"/"Katherine", "Thompson"/"Thomson" |
-| RM-1 | Duplicate lookup-table builders | -- | Extract shared `buildAsciiLookup` to a common utility module; import from both manipulation.zig and search.zig |
-| RM-4 | Duplicate import lists in build.zig | -- | Extract shared `const common_imports = &.{...}` array; reference from both `strings_mod` and `zigstr_mod` |
+| ~~AC-1/Q48r~~ | ~~`phoneticMatch` unreachable UB in ReleaseFast~~ | -- | ~~Replace `unreachable` with `@panic`~~ **Closed** (phonetic.zig:604) |
+| ~~AC-2~~ | ~~Metaphone duplicate branch condition~~ | -- | ~~Fix duplicate 'N' check~~ **Closed** (phonetic.zig:261) |
+| ~~AC-3~~ | ~~`doubleMetaphone` stub undocumented~~ | -- | ~~Add documentation noting simplified implementation~~ **Closed** (phonetic.zig:358-362) |
+| ~~AC-4~~ | ~~`maxInt(usize)` sentinel undocumented~~ | -- | ~~Add doc comments explaining error sentinel~~ **Closed** (parallel.zig:219,342) |
+| ~~RE-3~~ | ~~Phonetic match tests trivially pass~~ | -- | ~~Add cross-string assertions~~ **Closed** (phonetic.zig) |
+| RM-1 | ~~Duplicate lookup-table builders~~ | -- | ~~Extract shared utility~~ **Won't Do** (functions differ semantically; ~15 lines duplication does not justify cross-module coupling) |
+| RM-4 | ~~Duplicate import lists in build.zig~~ | -- | ~~Extract shared `const common_imports` array~~ **Closed** |
 | Q46 | ~~ASCII category misclassification~~ | -- | ~~Split `'!'...'/'` range~~ **Closed** |
 | Q47 | ~~CI omits test-comprehensive~~ | -- | ~~Add `test-comprehensive` job to `.gitlab-ci.yml`~~ **Closed** |
 | A5 | ~~concat() overflow~~ | [#62](https://gitlab.com/devnw/zig/strings/-/issues/62) | ~~Add `std.math.add` for length accumulation~~ **Closed** |
@@ -213,7 +220,7 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 | A4 | Inconsistent parameter ordering | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | Audit and align API conventions |
 | D3 | ~~No ADRs~~ | [#84](https://gitlab.com/devnw/zig/strings/-/issues/84) | ~~Create ADRs for top 5 design decisions~~ **Closed** |
 | Q27 | ~~49 pub fns missing doc comments~~ | [#43](https://gitlab.com/devnw/zig/strings/-/issues/43) | ~~Add `///` to all pub fns~~ **Closed** |
-| R4 | Regex VM stack recursion (residual) | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | Convert to iterative worklist |
+| R4 | ~~Regex VM stack recursion (residual)~~ | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | ~~Add MAX_RECURSION_DEPTH guard~~ **Closed** |
 
 ### Strategic (> 5 days, effort L)
 

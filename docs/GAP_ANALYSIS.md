@@ -1,9 +1,9 @@
 # Gap Analysis
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-24 (Phase 4 -- full codebase audit)
+**Last updated:** 2026-03-24 (Wave 4 -- gap closure completion)
 **Analyzer:** Claude Opus 4.6 (automated gap determination)
-**Branch:** main (commit: c8b770d)
+**Branch:** main (commit: 5c110b1)
 **Scope:** v1.0 readiness assessment
 
 > This file contains ONLY open gaps. Resolved gaps are in [GAP_ANALYSIS_RESOLVED.md](GAP_ANALYSIS_RESOLVED.md).
@@ -29,41 +29,6 @@
   - `isNormalized("\xC3\xA9", .nfd)` returns `false`
   - `isNormalized("e\xCC\x81", .nfc)` returns `false`
   - Tests cover all four forms with known normalized/unnormalized inputs
-
-### GAP-0033: Gap-closure changes remain uncommitted in working tree
-- **Issue:** [#87](https://gitlab.com/devnw/zig/strings/-/issues/87)
-- **Category:** Code Quality
-- **Severity:** High
-- **Status:** Pending commit
-- **Requirement source:** All gap closures from GAP-0003 through GAP-0030, plus Wave 2 closures (GAP-0012, GAP-0018, GAP-0019, GAP-0027, GAP-0032, and associated security/quality/perf items), plus Wave 3 closures (Q21, Q22, R2/S20, M3, P2-8, P2-12, M4, A1, Q27, D3, P2-15)
-- **Current state (evidence):**
-  - All code changes are complete and verified (536/536 tests pass, 76/76 build steps)
-  - `git diff --stat HEAD` shows 43 files changed, +1,792/-1,235 lines
-  - HEAD is `c8b770d` (spice dependency hash fix) -- no gap-closure commit exists yet
-  - Wave 3 additions: 19 new tests across manipulation.zig, search.zig, phonetic.zig, regex.zig
-- **Why this is a gap:** All gap-closure work exists only in the working tree until committed. The fixes are invisible to CI, other contributors, and the GitLab issue tracker.
-- **Impact/Risk:** High -- all gap-closure work is at risk of loss until committed.
-- **Recommended fix:** Stage and commit all gap-closure changes. Push to the remote.
-- **Acceptance criteria:**
-  - All modified and new files committed to `main` (or a feature branch)
-  - `git status` shows a clean working tree
-  - CI can run tests against the committed changes
-
-### R4: Regex VM recursive backtracking -- stack overflow risk for deep nesting
-- **Issue:** [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) (shares issue with GAP-0004, which closed the ReDoS aspect)
-- **Category:** Bug
-- **Severity:** Medium
-- **Requirement source:** Regex engine safety -- deep alternation/group nesting causes native stack overflow
-- **Current state (evidence):**
-  - `src/extended/regex.zig:1352-1361` -- `matchAt()` uses Zig function recursion for backtracking alternatives
-  - GAP-0004 added a step counter (MAX_STEPS = 1,000,000) which mitigates CPU-time DoS but does NOT prevent stack overflow from deep recursion
-  - PriorityScore: 36 (QUALITY_GAP_ANALYSIS.md)
-- **Why this is a gap:** A pattern with deep alternation nesting (e.g., `(a|b(c|d(e|f(...))))`) matched against long input can overflow the native stack before the step counter triggers.
-- **Impact/Risk:** Process crash (stack overflow) on adversarial or deeply nested regex patterns.
-- **Recommended fix:** Convert `matchAt()` from recursive to iterative using an explicit worklist/stack with a bounded depth limit.
-- **Acceptance criteria:**
-  - `matchAt()` uses an explicit stack with configurable depth limit
-  - Deeply nested patterns return an error instead of crashing
 
 ### A1: Error type duplication across modules (Partial)
 - **Issue:** [#39](https://gitlab.com/devnw/zig/strings/-/issues/39)
@@ -188,14 +153,15 @@
 | Severity | Count | Gap-IDs |
 |----------|-------|---------|
 | Critical | 1 | GAP-0001 (isNormalized NFC/NFKC -- requires UCD Quick_Check tables) |
-| High | 2 | GAP-0033 (uncommitted changes -- 43 files, +1,792/-1,235), P1-6 (table-based category/grapheme lookup, PerfScore 80) |
-| Medium | 4 | R4 (regex stack overflow), A1 (error type duplication -- partial, no action needed), P2-10 (O(1) decomposition tables, PerfScore 44), P2-3 (streaming normalization, PerfScore 35) |
-| Low | 3 | A4 (parameter ordering), Q49 (6 files over 800-line limit), P3-1 (composition binary search, subsumed by P2-10) |
+| High | 1 | P1-6 (table-based category/grapheme lookup, PerfScore 80) |
+| Medium | 3 | A1 (error type duplication -- partial, no action needed), P2-10 (O(1) decomposition tables, PerfScore 44), P2-3 (streaming normalization, PerfScore 35) |
+| Low | 3 | A4 (parameter ordering), Q49 (7 files over 800-line limit), P3-1 (composition binary search, subsumed by P2-10) |
 
-**Total open gaps: 10**
+**Total open gaps: 8**
 
 **Won't Do (moved to RESOLVED):** GAP-0002 (CI infra), GAP-0015 (UCD test vectors), GAP-0021 (fuzz infra), S6, S8, M2, M5, P1-4, Q14, Q25, Q26, P2-9, P2-16
-**Closed (satellite):** P2-13 (ASCII fast-path in getGraphemeBreak -- implemented)
+**Closed (Wave 4):** GAP-0033 (committed as 5c110b1), R4 (regex stack overflow -- MAX_RECURSION_DEPTH guard)
+**Closed (satellite):** P2-13 (ASCII fast-path in getGraphemeBreak), P2-NEW-1 (SIMD isAllAscii in normalize), P2-NEW-2 (virama guard), P3-NEW-1 (reverse capacity), S22/AC-1 (phoneticMatch @panic), AC-2 (metaphone 'N' fix), AC-3 (doubleMetaphone doc), RE-3 (phonetic cross-tests), AC-4 (parallel sentinel doc)
 **Closed (moved to RESOLVED):** GAP-0003-0014, GAP-0016-0020, GAP-0022-0032
 
 ---
@@ -208,3 +174,4 @@
 | GAP-0023 through GAP-0030 | 2026-03-24 | 2026-03-24 | Phase 3: all closed |
 | GAP-0031 through GAP-0033 | 2026-03-24 | -- | Re-audit: 3 false closures re-opened; Wave 2 closed GAP-0012/0031, GAP-0018, GAP-0019; GAP-0033 pending commit |
 | Cross-file IDs (R4, A1, A4, Q49, P1-6, P2-10, P2-3, P3-1) | 2026-03-24 | -- | Satellite analysis findings; tracked in PERF/QUALITY gap analysis files |
+| Wave 4 closures | 2026-03-24 | 2026-03-24 | GAP-0033 committed (5c110b1), R4 closed, S22/AC-1, AC-2, AC-3, RE-3, AC-4, P2-NEW-1, P2-NEW-2, P3-NEW-1 closed |

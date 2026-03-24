@@ -23,6 +23,12 @@ pub const SplitOptions = types.SplitOptions;
 /// Only ASCII codepoints (< 128) are indexed in the table. Returns the table and
 /// a flag indicating whether all codepoints in the set were ASCII (i.e. the table
 /// is a complete representation of the set).
+///
+/// NOTE: Similar lookup-table builders exist in search.zig (buildCodepointLookup,
+/// buildByteLookup). This variant differs by accepting UTF-8 input and decoding
+/// codepoints, whereas search.zig operates on raw bytes or pre-decoded codepoints.
+/// Deduplication would require adding a cross-module dependency or a shared utility
+/// module; the ~15 lines of duplication do not justify that coupling.
 fn buildAsciiLookup(chars: []const u8) struct { table: [256]bool, all_ascii: bool } {
     var table = [_]bool{false} ** 256;
     var all_ascii = true;
@@ -304,10 +310,13 @@ pub fn reverse(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
         return allocator.alloc(u8, 0);
     }
 
-    // Collect grapheme clusters
+    // Collect grapheme clusters.
+    // Capacity hint: str.len / 4 + 1 assumes an average grapheme size of ~4 bytes,
+    // which avoids the 16x over-allocation that str.len would cause (each entry is
+    // a []const u8 slice = 16 bytes on 64-bit). The ArrayList grows if needed.
     var clusters: std.ArrayList([]const u8) = .empty;
     defer clusters.deinit(allocator);
-    try clusters.ensureTotalCapacity(allocator, str.len);
+    try clusters.ensureTotalCapacity(allocator, str.len / 4 + 1);
 
     var iter = grapheme.iterator(str);
     while (iter.next()) |cluster| {

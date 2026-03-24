@@ -215,7 +215,13 @@ pub const EditDistanceBatchContext = struct {
     results: []usize,
 };
 
-/// Compute edit distance for multiple targets in parallel
+/// Compute edit distance for multiple targets in parallel.
+///
+/// Note: In the parallel execution path (when spice is enabled and input
+/// exceeds the parallel threshold), individual computation failures are
+/// represented as `std.math.maxInt(usize)` in the results array rather
+/// than propagating errors. The sequential path propagates errors normally
+/// via `try`.
 pub fn parallelEditDistanceBatch(
     source: []const u8,
     targets: []const []const u8,
@@ -333,7 +339,13 @@ pub const FuzzySearchContext = struct {
     results: []FuzzyResult,
 };
 
-/// Parallel fuzzy search - find best matches from candidates
+/// Parallel fuzzy search - find best matches from candidates.
+///
+/// Note: In the parallel execution path (when spice is enabled and input
+/// exceeds the parallel threshold), individual computation failures are
+/// represented as `std.math.maxInt(usize)` in the results array rather
+/// than propagating errors. The sequential path propagates errors normally
+/// via `try`.
 pub fn parallelFuzzySearch(
     query: []const u8,
     candidates: []const []const u8,

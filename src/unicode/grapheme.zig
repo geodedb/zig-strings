@@ -360,8 +360,11 @@ fn updateState(state: *GraphemeState, prop: GraphemeBreak) void {
 }
 
 fn updateStateWithCodepoint(state: *GraphemeState, prop: GraphemeBreak, cp: Codepoint) void {
-    // Track virama for Indic conjuncts
-    state.after_virama = isIndicVirama(cp);
+    // Track virama for Indic conjuncts.
+    // Guard: the lowest Indic virama is U+094D (Devanagari). Skip the 20-arm
+    // switch for ASCII and most Latin/common codepoints, which are always
+    // below this threshold.
+    state.after_virama = cp >= 0x094D and isIndicVirama(cp);
     state.last_codepoint = cp;
 
     updateState(state, prop);

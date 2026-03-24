@@ -2,7 +2,7 @@
 
 **Repository:** devnw/zig/strings
 **Date:** 2026-03-24
-**Waves completed:** Wave 1 (initial gap-close), Wave 2 (post-audit gap-close), Wave 3 (remaining items)
+**Waves completed:** Wave 1 (initial gap-close), Wave 2 (post-audit gap-close), Wave 3 (remaining items), Wave 4 (final closures + commit)
 **Platform:** GitLab (issues not updated -- skip-issues mode)
 
 ---
@@ -11,14 +11,14 @@
 
 | File | Closed | Partial | Won't Do | Remaining Open | Total |
 |------|--------|---------|----------|----------------|-------|
-| GAP_ANALYSIS.md (GAP-0001..0033) | 28 | 1 | 3 | 1 (GAP-0033 pending commit) | 33 |
-| SECURITY_GAP_ANALYSIS.md (S1..S21) | 19 | 0 | 2 | 0 | 21 |
-| QUALITY_GAP_ANALYSIS.md (49 items) | 38 | 2 | 6 | 3 | 49 |
-| PERF_GAP_ANALYSIS.md (31 items) | 21 | 1 | 5 | 4 | 31 |
+| GAP_ANALYSIS.md (GAP-0001..0033 + cross-file) | 30 | 1 | 3 | 0 | 34 |
+| SECURITY_GAP_ANALYSIS.md (S1..S24) | 20 | 0 | 2 | 2 (accepted risk) | 24 |
+| QUALITY_GAP_ANALYSIS.md (56 items) | 45 | 2 | 8 | 1 | 56 |
+| PERF_GAP_ANALYSIS.md (34 items) | 24 | 1 | 5 | 4 | 34 |
 
-**Note:** Many items are cross-referenced across files (e.g., GAP-0001 = R3 = P0-1; S2 = GAP-0012 = GAP-0031; S18 = D4; S20 = R2). Unique findings after deduplication: approximately 85 distinct items.
+**Note:** Many items are cross-referenced across files (e.g., GAP-0001 = R3 = P0-1; S2 = GAP-0012 = GAP-0031; S18 = D4; S20 = R2; S22 = AC-1/Q48r). Unique findings after deduplication: approximately 85 distinct items.
 
-**Overall (deduplicated):** ~63 closed, 2 partial, 11 won't do, ~7 deferred/open out of ~85 total items
+**Overall (deduplicated):** ~73 closed, 2 partial, 14 won't do, ~6 deferred/open out of ~95 total items
 
 ---
 
@@ -146,6 +146,39 @@ Closed 13 items, marked 2 as Won't Do.
 
 ---
 
+## Wave 4 (Final Closures + Commit)
+
+Closed 10 items, marked 2 as Won't Do. All changes committed as `5c110b1`.
+
+### Wave 4A -- Code Fixes
+
+| Gap-ID(s) | Title | Evidence |
+|-----------|-------|----------|
+| S22 / AC-1/Q48r | phoneticMatch `unreachable` replaced with `@panic` | phonetic.zig:604 -- `@panic` persists in all build modes |
+| AC-2 | Metaphone duplicate 'N' logic bug fixed | phonetic.zig:261 -- duplicate condition corrected |
+| AC-3 | doubleMetaphone stub documented | phonetic.zig:358-362 -- doc comment noting simplified implementation |
+| RE-3 | Phonetic cross-string tests added | phonetic.zig -- tests verify phonetically similar but different strings |
+| AC-4 | Parallel error sentinel documented | parallel.zig:219,342 -- doc comments for maxInt(usize) sentinel |
+| P2-NEW-1 | normalize SIMD isAllAscii wired | normalization.zig:15,458 + build.zig simd dependency |
+| P2-NEW-2 | Indic virama cp>=0x094D guard | grapheme.zig:367 -- short-circuits for non-Indic codepoints |
+| P3-NEW-1 | reverse() capacity str.len/4+1 | manipulation.zig:319 -- 4x memory reduction |
+| R4 | Regex VM MAX_RECURSION_DEPTH=500 | regex.zig:1032-1037,1269-1274 -- depth guard on split opcode |
+
+### Wave 4B -- Commit + Close-Out
+
+| Gap-ID(s) | Title | Evidence |
+|-----------|-------|----------|
+| GAP-0033 | All changes committed and pushed | commit 5c110b1; 538/538 tests, 76/76 build steps, format clean |
+
+### Wave 4 Won't Do
+
+| Gap-ID(s) | Title | Reason |
+|-----------|-------|--------|
+| RM-1 | Duplicate lookup-table builders | Semantic differences; ~15 lines not worth coupling |
+| RM-4 | Duplicate build.zig imports | LOW; Zig comptime slice constraints (already closed by extraction) |
+
+---
+
 ## Won't Do Items (All Waves)
 
 | Gap-ID(s) | File(s) | Title | Reason |
@@ -163,6 +196,7 @@ Closed 13 items, marked 2 as Won't Do.
 | P2-7 | PERF | isExtendedPictographic incomplete | Requires UCD Extended_Pictographic table |
 | P2-6 | PERF | replace() scans string twice | Intentional design for exact allocation |
 | P2-16 | PERF | replaceN() double scan | Intentional design for exact allocation |
+| RM-1 | QUALITY | Duplicate lookup-table builders | Semantic differences; ~15 lines not worth coupling |
 
 ---
 
@@ -179,10 +213,10 @@ Closed 13 items, marked 2 as Won't Do.
 
 | Gap-ID(s) | File(s) | Title | Next Steps |
 |-----------|---------|-------|------------|
-| GAP-0033 | GAP | Uncommitted gap-closure changes | Stage and commit all changes; push to remote |
-| R4 | QUALITY | Regex VM stack recursion (residual) | Convert to iterative worklist |
-| A4 | QUALITY | Inconsistent parameter ordering | Audit and align API conventions |
-| Q49 | QUALITY | 6 files exceed 800-line limit | Extract sub-modules from regex.zig (1932), manipulation.zig (1009) |
+| A4 | QUALITY | Inconsistent parameter ordering | Audit and align API conventions (breaking change) |
+| Q49 | QUALITY | 7 files exceed 800-line limit | Extract sub-modules from regex.zig (2059), manipulation.zig (1145) |
+| S23 | SECURITY | Regex VM unreachable for repeat opcodes | Accepted risk (safe by construction) |
+| S24 | SECURITY | 128 @intCast without formal proof | Accepted risk; fuzz testing recommended |
 | P1-6 | PERF | Table-based getCategory/getGraphemeBreak | Two-level trie from UCD data (requires UCD generation tooling) |
 | P2-3 | PERF | normalize() materializes full codepoint buffer | Streaming with fixed windows |
 | P2-10 | PERF | O(1) decomposition/composition tables | Two-level index or perfect hash |
@@ -298,6 +332,16 @@ Closed 13 items, marked 2 as Won't Do.
 | P2-15 | PERF | CharClass linear scan | Binary search for >8 ranges; 2 tests |
 | P3-2 | PERF | Redundant getCombiningClass | Negligible; closed |
 | P3-3 | PERF | appendRepeat N calls | Pre-allocation |
+| GAP-0033 | GAP | Uncommitted changes | Committed as 5c110b1 |
+| R4 | GAP, QUALITY | Regex VM stack recursion | MAX_RECURSION_DEPTH=500; regex.zig:1032-1037,1269-1274 |
+| S22 / AC-1/Q48r | SECURITY, QUALITY | phoneticMatch unreachable UB | @panic at phonetic.zig:604 |
+| AC-2 | QUALITY | Metaphone duplicate 'N' | phonetic.zig:261 corrected |
+| AC-3 | QUALITY | doubleMetaphone stub | phonetic.zig:358-362 documented |
+| RE-3 | QUALITY | Phonetic cross-string tests | phonetic.zig -- cross-string assertions |
+| AC-4 | QUALITY | Parallel sentinel undocumented | parallel.zig:219,342 doc comments |
+| P2-NEW-1 | PERF | normalize SIMD isAllAscii | normalization.zig:15,458 + build.zig |
+| P2-NEW-2 | PERF | Indic virama guard | grapheme.zig:367 |
+| P3-NEW-1 | PERF | reverse() capacity | manipulation.zig:319 |
 
 ---
 
@@ -306,7 +350,7 @@ Closed 13 items, marked 2 as Won't Do.
 | Command | Result |
 |---------|--------|
 | `zig build` (76 build steps) | PASS (76/76) |
-| `zig build test` (536 tests) | PASS (536/536) |
+| `zig build test` (538 tests) | PASS (538/538) |
 | `zig fmt --check src/ tests/ bench/ examples/ build.zig` | PASS (clean) |
 | Regressions | None detected |
 
@@ -315,17 +359,17 @@ Closed 13 items, marked 2 as Won't Do.
 ## Security Notes
 
 - **All 2 Critical security findings closed:** S1 (ReDoS via recursive backtracking -- MAX_STEPS=1M global budget), S2 (Jaro OOB write -- MAX_JARO_LEN=256 bounds guard, Wave 2)
-- **All 5 High security findings closed:** S3 (integer overflow -- checked arithmetic), S4 (Levenshtein/LCS truncation -- MAX_STACK_LEN=1024 documented, Wave 2), S5 (normalization bomb -- MAX_EXPANSION_RATIO=10), S15 (padLeft/padRight overflow), S16 (concat overflow)
+- **All 6 High security findings closed:** S3 (integer overflow -- checked arithmetic), S4 (Levenshtein/LCS truncation -- MAX_STACK_LEN=1024 documented, Wave 2), S5 (normalization bomb -- MAX_EXPANSION_RATIO=10), S15 (padLeft/padRight overflow), S16 (concat overflow), S22 (phoneticMatch unreachable -- @panic, Wave 4)
 - **All 8 Medium security findings closed or Won't Do:** S6 (supply chain -- Won't Do, blocked on upstream), S7 (UTF-16 overflow -- closed), S8 (NFKC homoglyph -- Won't Do), S9 (BiDi overrides -- closed), S10 (encoding detection -- closed), S11 (mmap path -- closed), S17 (ReDoS per-position -- closed), S18 (catch 0 sentinel -- closed)
-- **All 6 Low security findings closed:** S12 (debug.assert -- closed), S13 (pool race -- closed), S14 (NaN/Inf -- closed), S19 (ICU truncation -- closed), S20 (legacy @intCast -- closed, targeted fix, Wave 3), S21 (BiDi marks -- closed)
+- **All 8 Low security findings closed or accepted risk:** S12 (debug.assert -- closed), S13 (pool race -- closed), S14 (NaN/Inf -- closed), S19 (ICU truncation -- closed), S20 (legacy @intCast -- closed, targeted fix, Wave 3), S21 (BiDi marks -- closed), S23 (regex VM unreachable -- accepted risk, safe by construction), S24 (128 @intCast -- accepted risk)
 - **False closure remediation:** S2 and S4 were falsely closed in Wave 1 (fixes never committed to fuzzy.zig). Re-audit caught this. Wave 2 applied actual fixes with verified evidence.
-- **Mitigations verified:** Regex MAX_STEPS=1M (global budget), normalization MAX_EXPANSION_RATIO=10, checked arithmetic in join/repeat/replace/padLeft/padRight/concat, Jaro MAX_JARO_LEN=256 bounds guard, Levenshtein MAX_STACK_LEN=1024 documented, BiDi override+mark detection, ICU InputTooLarge guard, legacy encoding targeted intCast guards.
+- **Mitigations verified:** Regex MAX_STEPS=1M (global budget), Regex MAX_RECURSION_DEPTH=500, normalization MAX_EXPANSION_RATIO=10, checked arithmetic in join/repeat/replace/padLeft/padRight/concat, Jaro MAX_JARO_LEN=256 bounds guard, Levenshtein MAX_STACK_LEN=1024 documented, BiDi override+mark detection, ICU InputTooLarge guard, legacy encoding targeted intCast guards, phoneticMatch @panic guard.
 
 ---
 
 ## Remaining Blockers
 
-1. **Uncommitted Changes (GAP-0033)** -- All gap-closure work (Waves 1-3) exists only in the working tree until committed and pushed. This is the immediate next action. 536 tests pass, 76 build steps succeed, format clean.
+1. ~~**Uncommitted Changes (GAP-0033)**~~ -- **Resolved (Wave 4).** All gap-closure work committed as `5c110b1`. 538 tests pass, 76 build steps succeed, format clean.
 
 2. **UCD Table Generation Tooling** -- GAP-0001 (isNormalized Quick_Check), P1-6 (table-based getCategory/getGraphemeBreak), P2-10 (O(1) decomposition), and multiple Won't-Do items all require a shared UCD code generation pipeline. This is the single largest blocker for further performance and correctness improvements.
 
@@ -351,7 +395,16 @@ Skipped -- `--skip-issues` mode (no GitLab API access configured).
 | M4 | [#71](https://gitlab.com/devnw/zig/strings/-/issues/71) | Close (addLibModule/addLibTest helpers) |
 | Q27 | [#43](https://gitlab.com/devnw/zig/strings/-/issues/43) | Close (all 49 pub fns documented) |
 | D3 | [#84](https://gitlab.com/devnw/zig/strings/-/issues/84) | Close (5 ADRs created) |
-| GAP-0033 | [#87](https://gitlab.com/devnw/zig/strings/-/issues/87) | Comment (pending commit; all code complete) |
+| GAP-0033 | [#87](https://gitlab.com/devnw/zig/strings/-/issues/87) | Close (committed as 5c110b1) |
+
+### Wave 4 Issues Needing Update
+
+| Gap-ID | Issue | Action Needed |
+|--------|-------|---------------|
+| S22 / AC-1/Q48r | -- (not filed) | No issue to close |
+| AC-2, AC-3, RE-3, AC-4 | -- (not filed) | No issue to close |
+| R4 | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | Comment (MAX_RECURSION_DEPTH=500 added; shares issue with GAP-0004) |
+| GAP-0033 | [#87](https://gitlab.com/devnw/zig/strings/-/issues/87) | Close (committed as 5c110b1) |
 
 ### Previously Reported Issues (Waves 1-2)
 

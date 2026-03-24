@@ -1,8 +1,8 @@
 # Security Gap Analysis
 
-**Last updated:** 2026-03-24 (Phase 4 verification + new findings)
-**Analyzer:** Claude Opus 4.6 (security audit, Phases 2-4)
-**Repository:** devnw/zig/strings (branch: main, commit: b66264f)
+**Last updated:** 2026-03-24 (Wave 4 -- gap closure completion)
+**Analyzer:** Claude Opus 4.6 (security audit, Phases 2-4 + Wave 4)
+**Repository:** devnw/zig/strings (branch: main, commit: 5c110b1)
 **Scope:** Full security review of string processing library
 
 ---
@@ -12,16 +12,16 @@
 | Risk Level | Total | Closed | Won't Do | Open |
 |-----------|-------|--------|----------|------|
 | Critical | 2 | 2 | 0 | 0 |
-| High | 6 | 5 | 0 | **1** |
+| High | 6 | 6 | 0 | 0 |
 | Medium | 8 | 6 | 2 | 0 |
 | Low | 8 | 6 | 0 | **2** |
-| **Total** | **24** | **19** | **2** | **3** |
+| **Total** | **24** | **20** | **2** | **2** |
 
 **Phase 4 verification (2026-03-24): All 19 closed findings independently verified. 3 new findings added (F1, F2, F4).**
 
 Phase 4 performed independent source-level verification of every closed finding. All 19 closures confirmed -- the fixes exist in source at the documented locations. Phase 3 security review also identified 4 new findings; F3 (spice pinned to main) is the same root cause as existing S6 (Won't Do), so it is merged. F1, F2, and F4 are new entries (S22, S23, S24).
 
-**Overall security posture: GOOD.** Zero critical open findings. One HIGH open (S22: phoneticMatch unreachable UB). Two LOW open findings (S23, S24) safe by construction / accepted risk. All previously critical and high-severity issues are resolved.
+**Overall security posture: GOOD.** Zero critical open findings. Zero HIGH open findings (S22 closed in Wave 4). Two LOW open findings (S23, S24) safe by construction / accepted risk. All critical and high-severity issues are resolved.
 
 **Wave 1-3 + Wave 2 gap closure status (all verified in Phase 4):**
 
@@ -42,7 +42,9 @@ Phase 4 performed independent source-level verification of every closed finding.
 
 **Top Open Risk:**
 
-1. **S22 (HIGH, Risk 64)** -- `phoneticMatch()` uses `unreachable` for non-soundex algorithms, causing undefined behavior in ReleaseFast builds. `phonetic.zig:603`. Requires fix.
+1. ~~**S22 (HIGH, Risk 64)**~~ -- **Closed (Wave 4).** Replaced `unreachable` with `@panic` at `phonetic.zig:604`. Panic persists in all build modes including ReleaseFast. Cross-ref: AC-1/Q48r (QUALITY_GAP_ANALYSIS.md) also closed.
+2. **S23 (LOW, Risk 16)** -- Regex VM unreachable for repeat_greedy/repeat_lazy opcodes. Safe by construction (compiled away). Accepted risk.
+3. **S24 (LOW, Risk 16)** -- 128 @intCast calls across src/ without formal proof. Accepted risk; fuzz testing recommended.
 
 **Additional Observations (non-scored, RESOLVED):**
 
@@ -53,6 +55,7 @@ Phase 4 performed independent source-level verification of every closed finding.
 **Existing Mitigations Verified (Phase 4 source-level confirmation):**
 
 - Regex MAX_STEPS=1M (fully effective -- global budget per execute() call, confirmed at `regex.zig:1030,1054,1120-1121`)
+- Regex MAX_RECURSION_DEPTH=500 (prevents stack overflow from deeply nested patterns; R4 closure. `regex.zig:1038,1048,1273-1281`)
 - Normalization MAX_EXPANSION_RATIO=10 (effective, confirmed at `normalization.zig:449,491`; caveat: ratio compares codepoints vs bytes, see S5 notes)
 - join/repeat/replace overflow checks (fully effective -- checked arithmetic confirmed in manipulation.zig)
 - MappedString PROT.READ (limits to info disclosure)
@@ -61,13 +64,14 @@ Phase 4 performed independent source-level verification of every closed finding.
 - Levenshtein/LCS silent truncation (S4) -- **Mitigated (Wave 2).** `MAX_STACK_LEN=1024` constant and doc comments document the limit. Confirmed at `fuzzy.zig:40,62-68`.
 - Parallel edit distance sentinel (S18) -- `catch std.math.maxInt(usize)` confirmed at `parallel.zig:259,261,380,381`.
 - ICU BreakIterator length guard (S19) -- `error.InputTooLarge` confirmed at `icu.zig:374-401`.
+- phoneticMatch @panic guard (S22) -- `@panic` replaces `unreachable` at `phonetic.zig:604`. Persists in all build modes.
 - GB18030 codepoint range guard (S20) -- safe_cp clamp confirmed at `chinese.zig:330`; `std.math.cast` at `:375`.
 
 ---
 
 ## Immediate Actions Required
 
-1. **S22 (HIGH -- phoneticMatch unreachable UB, Risk 64):** Replace `unreachable` in `phoneticMatch()` with a compile-time or runtime error for non-soundex algorithms. In ReleaseFast builds, passing any algorithm other than `.soundex` causes undefined behavior. `phonetic.zig:603`. **Effort: 30 min.**
+1. ~~**S22 (HIGH -- phoneticMatch unreachable UB, Risk 64):**~~ **Closed (Wave 4).** Replaced `unreachable` with `@panic` at `phonetic.zig:604`. Panic persists in all build modes. Cross-ref: AC-1/Q48r (QUALITY_GAP_ANALYSIS.md) also closed.
 2. ~~**S2 (CRITICAL -- Jaro OOB write, Risk 100):**~~ **Closed (Wave 2).** Phase 4 verified. Bounds guard at `fuzzy.zig:229`.
 3. ~~**S4 (HIGH -- Levenshtein silent truncation, Risk 68):**~~ **Closed (Wave 2).** Phase 4 verified. Doc comments and constant at `fuzzy.zig:40,62-68`.
 4. ~~**S15 + S16 (Integer overflow in padLeft/padRight/concat):**~~ **Closed 2026-03-24.** Phase 4 verified.
@@ -104,7 +108,7 @@ Sorted by Risk Score descending. Open findings highlighted.
 | 19 | ~~S20~~ | Low | 20 | ~~128 @intCast across 15 files without range validation (updated count)~~ | `src/encoding/legacy/` | CWE-681 / A06:2021 | chinese.zig:330,375 | [#66](https://gitlab.com/devnw/zig/strings/-/issues/66) | Targeted fix + audit | -- | 180d | Closed |
 | 20 | S14 | Low | 20 | catch unreachable + NaN/Inf UB in locale formatting | `src/extended/locale.zig` | CWE-248 / A06:2021 | locale.zig:350-355 | -- | NaN/Inf guard | -- | 180d | Closed |
 | 21 | S21 | Low | 20 | BiDi detector misses LRM/RLM/ALM markers | `src/unicode/bidi.zig` | CWE-116 / A03:2021 | bidi.zig:146-168 | [#70](https://gitlab.com/devnw/zig/strings/-/issues/70) | Added isBidiMark + containsSuspiciousBidiChars | -- | 180d | Closed |
-| 22 | **S22** | **High** | **64** | **phoneticMatch unreachable causes UB in ReleaseFast for non-soundex** | `src/extended/phonetic.zig` | CWE-617 / A06:2021 | phonetic.zig:603 | -- | Replace unreachable with @compileError or return error | -- | 30d | **Open** |
+| 22 | ~~S22~~ | High | 64 | ~~phoneticMatch unreachable causes UB in ReleaseFast for non-soundex~~ | `src/extended/phonetic.zig` | CWE-617 / A06:2021 | phonetic.zig:604 | -- | Replaced unreachable with @panic | -- | 30d | Closed |
 | 23 | S23 | Low | 16 | Regex VM unreachable for repeat_greedy/repeat_lazy opcodes | `src/extended/regex.zig` | CWE-617 / A06:2021 | regex.zig:1303 | -- | Safe by construction (compiled away) | -- | 180d | Open (accepted risk) |
 | 24 | S24 | Low | 16 | 128 @intCast calls across src/ without formal proof of safety | various (15 files) | CWE-681 / A06:2021 | (see S20 for legacy subset) | -- | Fuzz testing recommended | -- | 180d | Open (accepted risk) |
 
@@ -656,7 +660,7 @@ The function signature accepts any `Algorithm` value, making it a public API con
 
 **How to Verify:** Build with `-DReleaseFast` and call `phoneticMatch("foo", "bar", .metaphone)`. Without the fix, LLVM treats this as UB and may optimize out the entire function body.
 
-**Status:** Open.
+**Status:** Closed (Wave 4, 2026-03-24). Replaced `unreachable` with `@panic("phoneticMatch only supports soundex; use phoneticMatchAlloc for other algorithms")` at `phonetic.zig:604`. The `@panic` persists in all build modes including ReleaseFast/ReleaseSmall, ensuring callers always get a clear diagnostic rather than undefined behavior. Cross-ref: AC-1/Q48r (QUALITY_GAP_ANALYSIS.md) also closed.
 
 ---
 
@@ -773,7 +777,7 @@ For each closed finding, the verification checked:
 
 | ID | Severity | Risk Score | Finding | Source |
 |----|----------|-----------|---------|--------|
-| S22 | **High** | 64 | phoneticMatch unreachable causes UB in ReleaseFast | Phase 3 (F1) |
+| ~~S22~~ | ~~High~~ | ~~64~~ | ~~phoneticMatch unreachable causes UB in ReleaseFast~~ | Phase 3 (F1) -- **Closed (Wave 4)** |
 | S23 | Low | 16 | Regex VM unreachable for repeat_greedy/repeat_lazy | Phase 3 (F2) |
 | S24 | Low | 16 | 128 @intCast calls without formal proof | Phase 3 (F4) |
 
@@ -793,7 +797,7 @@ Phase 3 finding F3 (spice pinned to main branch) is the same root cause as S6 an
 - ~~**S15**~~ -- padLeft/padRight integer overflow -- Closed. Phase 4 verified.
 - ~~**S16**~~ -- concat() integer overflow -- Closed. Phase 4 verified.
 - ~~**S17**~~ -- ReDoS per-position step counter reset -- Closed. Phase 4 verified.
-- **S22** -- phoneticMatch unreachable UB in ReleaseFast -- **Open (HIGH)**
+- ~~**S22**~~ -- phoneticMatch unreachable UB in ReleaseFast -- **Closed (Wave 4)**
 
 ### Input Validation / Bounds Checking
 - ~~**S2**~~ -- Jaro OOB on strings > 256 bytes -- **Closed (Wave 2)**. Phase 4 verified at `fuzzy.zig:35,229,236-237`.
@@ -836,7 +840,7 @@ Phase 3 finding F3 (spice pinned to main branch) is the same root cause as S6 an
 | ~~S18~~ | ~~Replace `catch 0` with sentinel/error in parallel edit distance~~ | ~~30 min~~ | ~~[#61](https://gitlab.com/devnw/zig/strings/-/issues/61)~~ Closed |
 | ~~S21~~ | ~~Add LRM/RLM/ALM to BiDi detection~~ | ~~30 min~~ | ~~[#70](https://gitlab.com/devnw/zig/strings/-/issues/70)~~ Closed |
 | ~~S19~~ | ~~Add length check to ICU BreakIterator constructor~~ | ~~30 min~~ | ~~[#64](https://gitlab.com/devnw/zig/strings/-/issues/64)~~ Closed |
-| **S22** | **Replace unreachable in phoneticMatch with safe error handling** | **30 min** | -- |
+| ~~S22~~ | ~~Replace unreachable in phoneticMatch with safe error handling~~ | ~~30 min~~ | **Closed** (phonetic.zig:604) |
 | S23 | Replace unreachable in regex VM repeat opcodes with @panic (defense-in-depth) | 15 min | -- |
 | S6 | Pin spice dependency to tagged release | 15 min | [#47](https://gitlab.com/devnw/zig/strings/-/issues/47) (blocked) |
 

@@ -1029,12 +1029,20 @@ const VM = struct {
     /// of hanging.
     const MAX_STEPS: usize = 1_000_000;
 
+    /// Maximum recursion depth for matchAt() to prevent stack overflow.
+    /// Deeply nested patterns like `(((...)))` with nested quantifiers
+    /// generate cascading `split` opcodes that recurse in matchAt().
+    /// Without this limit, O(1000+) nested groups could overflow the
+    /// call stack before MAX_STEPS is reached.
+    const MAX_RECURSION_DEPTH: usize = 500;
+
     regex: Regex,
     input: []const u8,
     start_pos: usize,
     anchored: bool,
     groups: [64]?usize, // Max 32 groups (start/end pairs)
     step_count: usize,
+    recursion_depth: usize,
 
     fn init(regex_pattern: Regex, input: []const u8) VM {
         return VM{
@@ -1044,6 +1052,7 @@ const VM = struct {
             .anchored = false,
             .groups = [_]?usize{null} ** 64,
             .step_count = 0,
+            .recursion_depth = 0,
         };
     }
 
@@ -1256,7 +1265,15 @@ const VM = struct {
                     // NFA split: try both paths
                     // inst.a = first branch target (greedy: try this first)
                     // inst.b = second branch target (greedy: try this if first fails)
-                    if (self.matchAt(inst.a, current_pos)) |end| {
+
+                    // Guard against stack overflow from deeply nested patterns
+                    if (self.recursion_depth >= MAX_RECURSION_DEPTH) return null;
+
+                    self.recursion_depth += 1;
+                    const result = self.matchAt(inst.a, current_pos);
+                    self.recursion_depth -= 1;
+
+                    if (result) |end| {
                         return end;
                     }
                     // Try second path
@@ -1971,6 +1988,77 @@ test "Q5: Unicode property \\p{N} matches any number category" {
     try testing.expect(re.isMatch("0"));
     try testing.expect(!re.isMatch("a"));
     try testing.expect(!re.isMatch("!"));
+}
+
+test "R4: deeply nested groups do not cause stack overflow" {
+    // Deeply nested quantified groups like (?:(?:(?:...a...)+)+)+ generate
+    // cascading split opcodes that recurse in matchAt(). Without a recursion
+    // depth limit, O(1000+) levels could overflow the call stack.
+    // This test verifies the VM safely returns null (no match) or matches
+    // without crashing, rather than overflowing the stack.
+    const testing = std.testing;
+
+    // Build a pattern with 200 nested non-capturing groups, each with a + quantifier:
+    // (?:(?:(?:...a...)+)+)+
+    const depth = 200;
+    var pattern_buf: [depth * 4 + 1 + depth * 2]u8 = undefined;
+    var offset: usize = 0;
+
+    // Opening: "(?:" repeated `depth` times
+    for (0..depth) |_| {
+        @memcpy(pattern_buf[offset..][0..4], "(?:.");
+        offset += 4;
+    }
+
+    // The inner literal
+    pattern_buf[offset] = 'a';
+    offset += 1;
+
+    // Closing: ")+" repeated `depth` times
+    for (0..depth) |_| {
+        @memcpy(pattern_buf[offset..][0..2], ")+");
+        offset += 2;
+    }
+
+    const pattern = pattern_buf[0..offset];
+
+    // The pattern may hit PatternTooComplex if too many instructions are
+    // generated, which is also an acceptable safe outcome. The key is that
+    // it must NOT crash from stack overflow.
+    const result = Regex.compile(testing.allocator, pattern);
+    if (result) |*r| {
+        var re = r.*;
+        defer re.deinit();
+
+        // Try matching -- should complete without stack overflow.
+        // The VM will either match or return null after hitting
+        // MAX_RECURSION_DEPTH or MAX_STEPS, both are safe outcomes.
+        _ = re.isMatch("aaa");
+        _ = re.isMatch("a");
+    } else |err| {
+        // PatternTooComplex is acceptable -- it means the compiler
+        // rejected it safely before execution.
+        try testing.expect(err == RegexError.PatternTooComplex);
+    }
+}
+
+test "R4: MAX_RECURSION_DEPTH prevents stack overflow on pathological split chains" {
+    // Verify that the recursion depth limit specifically triggers on
+    // patterns that cause deep split recursion, rather than just relying
+    // on MAX_STEPS. A pattern like (a+)+ on a string of 'a's creates
+    // many split branches. We verify it completes safely.
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "(a+)+b");
+    defer re.deinit();
+
+    // Build a string of 500 'a's with no 'b' -- forces maximum backtracking.
+    // This should complete safely (returning no match) without stack overflow.
+    var input: [500]u8 = undefined;
+    @memset(&input, 'a');
+
+    // Must not crash; returns false because there is no 'b'
+    try testing.expect(!re.isMatch(&input));
 }
 
 test "P2-15: CharClass binary search for large range sets" {

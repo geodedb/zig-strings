@@ -15,6 +15,7 @@ const std = @import("std");
 const types = @import("types");
 const codepoint_mod = @import("codepoint");
 const categories = @import("categories");
+const simd = @import("simd");
 
 // Generated UCD tables
 const ucd_ccc = @import("ucd_ccc");
@@ -453,14 +454,7 @@ pub fn normalize(allocator: std.mem.Allocator, utf8: []const u8, form: Normaliza
     // ASCII fast-path: ASCII text is always in all normalization forms.
     // This avoids the full decompose-sort-compose pipeline for pure ASCII,
     // which is the common case for many workloads.
-    var all_ascii = true;
-    for (utf8) |byte| {
-        if (byte >= 0x80) {
-            all_ascii = false;
-            break;
-        }
-    }
-    if (all_ascii) {
+    if (simd.isAllAscii(utf8)) {
         const copy = try allocator.alloc(u8, utf8.len);
         @memcpy(copy, utf8);
         return copy;

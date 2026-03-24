@@ -339,8 +339,9 @@ pub fn build(b: *std.Build) void {
         .{ .name = "types", .module = types_mod },
     });
 
-    // Wire SIMD acceleration into case module for fast ASCII paths
+    // Wire SIMD acceleration into case and normalization modules for fast ASCII paths
     case_mod.addImport("simd", simd_mod);
+    normalization_mod.addImport("simd", simd_mod);
 
     const pool_mod = addLibModule(b, target, optimize, "pool", "src/util/pool.zig", &.{
         .{ .name = "types", .module = types_mod },
@@ -637,6 +638,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
         .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
         .{ .name = "ucd_composition", .module = ucd_comp_mod },
+        .{ .name = "simd", .module = simd_mod },
     })).step);
     test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/grapheme.zig", &.{
         .{ .name = "types", .module = types_mod },

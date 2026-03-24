@@ -1,10 +1,10 @@
 # Performance Gap Analysis
 
-**Last updated:** 2026-03-24 (Phase 4 performance review -- 3 new findings)
-**Repository:** devnw/zig/strings (branch: main, commit: b66264f)
+**Last updated:** 2026-03-24 (Wave 4 -- gap closure completion)
+**Repository:** devnw/zig/strings (branch: main, commit: 5c110b1)
 **Analyzer:** Claude Opus 4.6 (automated performance audit)
 **Scope:** Full library performance audit -- Phases 1-4 + Wave 2 + Wave 3 closure + Phase 4 review
-**Overall rating:** GOOD (21 closed items verified, no regressions detected)
+**Overall rating:** GOOD (24 closed items, no regressions detected)
 
 ---
 
@@ -16,19 +16,18 @@
 |---|---|---|---|---|---|---|
 | P0 (SLO breach / outage risk) | 4 | 3 | 1 | 0 | 0 | 0 |
 | P1 (Material user-facing impact) | 8 | 5 | 0 | 2 | 1 | 0 |
-| P2 (Moderate impact / cost) | 18 | 11 | 0 | 3 | 4 | 0 |
-| P3 (Minor optimization) | 4 | 2 | 0 | 0 | 2 | 0 |
-| **Total** | **34** | **21** | **1** | **5** | **7** | **0** |
+| P2 (Moderate impact / cost) | 18 | 13 | 0 | 3 | 2 | 0 |
+| P3 (Minor optimization) | 4 | 3 | 0 | 0 | 1 | 0 |
+| **Total** | **34** | **24** | **1** | **5** | **4** | **0** |
 
-**Phase 4 review closure verification:** All 21 previously closed items verified -- no regressions detected.
+**Phase 4 review closure verification:** All 21 previously closed items verified -- no regressions detected. 3 new items closed (P2-NEW-1, P2-NEW-2, P3-NEW-1).
 
-### Top 5 Active Risks by Expected Impact
+### Top 4 Active Risks by Expected Impact
 
 1. **P1-6** -- Table-based `getCategory()` / `getGraphemeBreak()`. PerfScore 80. 3-5x grapheme, 2-3x NFC. [#68](https://gitlab.com/devnw/zig/strings/-/issues/68)
 2. **P2-10** -- O(1) decomposition/composition tables. PerfScore 44. 10-25% NFC improvement. [#80](https://gitlab.com/devnw/zig/strings/-/issues/80)
-3. **P2-NEW-2** -- Unconditional `isIndicVirama()` in grapheme iteration. PerfScore 35. Likely contributor to 41% grapheme count regression.
-4. **P2-3** -- `normalize()` materializes full codepoint buffer. PerfScore 35. Streaming with fixed windows.
-5. **P2-NEW-1** -- `normalize()` ASCII fast-path uses scalar loop instead of `simd.isAllAscii()`. PerfScore 30. 7.6x SIMD advantage available.
+3. **P2-3** -- `normalize()` materializes full codepoint buffer. PerfScore 35. Streaming with fixed windows.
+4. **P3-1** -- Composition binary search on 941-entry flat array. PerfScore 15. Subsumed by P2-10.
 
 ### Top 5 Resolved Risks (Historical)
 
@@ -83,13 +82,13 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | 22 | P2 | **40** | **[P3]** Batch template interpolation (per-byte append) | formatting.zig | `src/conversion/formatting.zig:24-64,81-153` | 5-10x for large templates | [#83](https://gitlab.com/devnw/zig/strings/-/issues/83) | Track literal segments, bulk appendSlice | git blame formatting.zig | Quarter | Closed |
 | 23 | P2 | **36** | **[P4 NEW]** Regex `CharClass.contains()` linear scan | regex.zig | `src/extended/regex.zig:313-322` -- linear scan over `self.ranges` for every codepoint match | O(n*r) where r = number of ranges per class | -- | Sort ranges + binary search, or bitmap for BMP | git blame regex.zig | Quarter | **Closed** |
 | 24 | P2 | 35 | `normalize()` materializes full codepoint buffer | normalization.zig | `src/unicode/normalization.zig:422-442` | O(n) extra memory | [#45](https://gitlab.com/devnw/zig/strings/-/issues/45) | Streaming with fixed windows | git blame normalization.zig | Quarter | Open |
-| 25 | P2 | **35** | **[P4-REV NEW]** Unconditional `isIndicVirama()` on every codepoint | grapheme.zig | `src/unicode/grapheme.zig:364` -- `updateStateWithCodepoint()` calls `isIndicVirama(cp)` on every codepoint including ASCII | 242,823 ns/op grapheme (41% regression vs Phase 1) | -- | Guard with `if (cp >= 0x094D)` before `isIndicVirama()` call | git blame grapheme.zig | Quarter | Open |
+| 25 | P2 | **35** | **[P4-REV NEW]** Unconditional `isIndicVirama()` on every codepoint | grapheme.zig | `src/unicode/grapheme.zig:367` -- `updateStateWithCodepoint()` guarded with `cp >= 0x094D` | 242,823 ns/op grapheme (41% regression vs Phase 1) | -- | Guard with `if (cp >= 0x094D)` before `isIndicVirama()` call | git blame grapheme.zig | Quarter | **Closed** |
 | 26 | P2 | 35 | `trimLeftChars`/`trimRightChars` O(n*m) | manipulation.zig | `src/ops/manipulation.zig` -- now uses `buildAsciiLookup()` for O(1) ASCII membership | Same as containsAny | [#44](https://gitlab.com/devnw/zig/strings/-/issues/44) | `[256]bool` lookup table (closed as part of P2-8) | git blame manipulation.zig | Quarter | **Closed** |
 | 27 | P2 | **32** | **[P4 NEW]** `replaceN()` double scan | manipulation.zig | `src/ops/manipulation.zig:303-365` -- pass 1 counts occurrences, pass 2 replaces; intentional design for exact pre-allocation | ~1.5x scan overhead traded for zero reallocation cost | -- | Won't fix: double scan enables exact allocation, avoiding ArrayList growth overhead. Doc comment added. | git blame manipulation.zig | Quarter | **Won't Do** |
-| 28 | P2 | **30** | **[P4-REV NEW]** `normalize()` ASCII fast-path scalar loop instead of SIMD | normalization.zig | `src/unicode/normalization.zig:456-462` -- byte-by-byte `if (byte >= 0x80)` loop instead of `simd.isAllAscii()` | 7.6x SIMD vs scalar measured in simd benchmarks | -- | Replace scalar loop with `simd.isAllAscii()` (already available + tested) | git blame normalization.zig | Quarter | Open |
+| 28 | P2 | **30** | **[P4-REV NEW]** `normalize()` ASCII fast-path scalar loop instead of SIMD | normalization.zig | `src/unicode/normalization.zig:15,458` -- `simd.isAllAscii()` replaces scalar loop | 7.6x SIMD vs scalar measured in simd benchmarks | -- | Replace scalar loop with `simd.isAllAscii()` (already available + tested) | git blame normalization.zig | Quarter | **Closed** |
 | 29 | P2 | 30 | `isExtendedPictographic` incomplete ranges | grapheme.zig | `src/unicode/grapheme.zig:225-241` -- "Simplified" | Incorrect grapheme counts | -- | Full UCD Extended_Pictographic table | git blame grapheme.zig | Quarter | Won't Do |
 | 30 | P2 | 25 | `replace()` scans string twice | manipulation.zig | `src/ops/manipulation.zig` -- delegates to `replaceN()` which uses intentional double scan for exact allocation | ~1.2x overhead | [#46](https://gitlab.com/devnw/zig/strings/-/issues/46) | Won't fix: same rationale as P2-16 (exact pre-allocation avoids realloc overhead) | git blame manipulation.zig | Quarter | **Won't Do** |
-| 31 | P3 | **15** | **[P4-REV NEW]** `reverse()` over-allocates cluster ArrayList by 16x for ASCII | manipulation.zig | `src/ops/manipulation.zig:310` -- `ensureTotalCapacity(allocator, str.len)` allocates `str.len` entries of `[]const u8` (16 bytes each) | 16x memory overhead for pure ASCII (16 bytes per 1-byte cluster) | -- | Use `str.len / 4` or estimated grapheme count as capacity hint | git blame manipulation.zig | Backlog | Open |
+| 31 | P3 | **15** | **[P4-REV NEW]** `reverse()` over-allocates cluster ArrayList by 16x for ASCII | manipulation.zig | `src/ops/manipulation.zig:319` -- capacity hint changed to `str.len / 4 + 1` | 16x memory overhead reduced to ~4x | -- | Use `str.len / 4 + 1` as capacity hint | git blame manipulation.zig | Backlog | **Closed** |
 | 32 | P3 | 15 | Composition binary search on 941-entry array | composition.zig | `src/unicode/data/composition.zig:965-979` | <10% improvement | -- | Two-level index | git blame composition.zig | Backlog | Open |
 | 33 | P3 | 10 | Redundant `getCombiningClass` in CCC sort | normalization.zig | `src/unicode/normalization.zig:493-497` | Negligible (2-4 element runs) | -- | Cache CCC values | git blame normalization.zig | Backlog | Closed |
 | 34 | P3 | 10 | `appendRepeat` N separate appendSlice calls | builder.zig | `src/builder.zig:82-87` | Minor for small N | -- | Pre-allocate before loop | git blame builder.zig | Backlog | Closed |
@@ -580,7 +579,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 - **Affected Paths:** `src/unicode/grapheme.zig` (all grapheme iteration callers: `count()`, `reverse()`, `split()`, etc.)
 - **Rollout Risk:** Very Low. The guard is a pure short-circuit -- viramas below U+094D do not exist in Unicode. No behavioral change.
 - **Owner:** git blame src/unicode/grapheme.zig | **SLA:** Next quarter
-- **Status:** Open
+- **Status:** Closed (2026-03-24). Guard `cp >= 0x094D and isIndicVirama(cp)` added in `updateStateWithCodepoint()`. ASCII and Latin codepoints now skip the 20-arm switch entirely via short-circuit evaluation.
 
 #### P2-5: `trimLeftChars`/`trimRightChars` O(n*m)
 
@@ -642,7 +641,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 - **Affected Paths:** `src/unicode/normalization.zig`, `build.zig` (module dependency)
 - **Rollout Risk:** Very Low. `simd.isAllAscii()` is already tested and used in `case.zig`. The function returns the same boolean as the scalar loop. No behavioral change.
 - **Owner:** git blame src/unicode/normalization.zig | **SLA:** Next quarter
-- **Status:** Open
+- **Status:** Closed (2026-03-24). Replaced scalar byte-by-byte loop with `simd.isAllAscii(utf8)`. Added `const simd = @import("simd");` to normalization.zig. Wired simd module dependency via `normalization_mod.addImport("simd", simd_mod)` in build.zig.
 
 #### P2-7: `isExtendedPictographic` Incomplete Ranges
 
@@ -902,7 +901,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 - **Affected Paths:** `src/ops/manipulation.zig`
 - **Rollout Risk:** Very Low. Reducing the capacity hint may cause 1-2 extra reallocations for strings with unusually high grapheme density (e.g., pure ASCII), but the amortized cost is identical. No behavioral change.
 - **Owner:** git blame src/ops/manipulation.zig | **SLA:** Backlog
-- **Status:** Open
+- **Status:** Closed (2026-03-24). Changed capacity hint from `str.len` to `str.len / 4 + 1`, reducing initial allocation by ~4x. ArrayList grows automatically if the estimate is too low.
 
 #### P3-1: Composition Binary Search on 941-Entry Flat Array
 
@@ -941,9 +940,9 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | ~~**P2-8:** Bitset for byte-level search/trim~~ | ~~0.5 day~~ | ~~10-50x for large ASCII char sets~~ | ~~[#85](https://gitlab.com/devnw/zig/strings/-/issues/85)~~ **Closed** |
 | ~~**P2-16:** `replaceN()` single-pass rewrite~~ | ~~0.5 day~~ | ~~1.5x for high-match-density inputs~~ | -- **Won't Do** |
 | ~~**P2-11:** Batch template interpolation~~ | ~~0.5 day~~ | ~~5-10x for large templates~~ | ~~[#83](https://gitlab.com/devnw/zig/strings/-/issues/83)~~ **Closed** |
-| **P2-NEW-2:** Guard `isIndicVirama()` with `cp >= 0x094D` | 0.25 day | 10-30% grapheme for ASCII text; may explain 41% regression | -- |
-| **P2-NEW-1:** Replace scalar ASCII loop with `simd.isAllAscii()` in normalize() | 0.25 day | 7.6x faster ASCII detection (modest overall impact) | -- |
-| **P3-NEW-1:** Reduce `reverse()` cluster capacity hint to `str.len / 4` | 0.1 day | 4x memory reduction for ArrayList backing | -- |
+| ~~**P2-NEW-2:** Guard `isIndicVirama()` with `cp >= 0x094D`~~ | ~~0.25 day~~ | ~~10-30% grapheme for ASCII text; may explain 41% regression~~ | **Closed** |
+| ~~**P2-NEW-1:** Replace scalar ASCII loop with `simd.isAllAscii()` in normalize()~~ | ~~0.25 day~~ | ~~7.6x faster ASCII detection (modest overall impact)~~ | **Closed** |
+| ~~**P3-NEW-1:** Reduce `reverse()` cluster capacity hint to `str.len / 4`~~ | ~~0.1 day~~ | ~~4x memory reduction for ArrayList backing~~ | **Closed** |
 
 ### Medium Effort (1-5 days each)
 
@@ -1011,6 +1010,6 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | P2-13 | -- (not yet filed) | **Closed** (2026-03-24) |
 | P2-15 | -- (not yet filed) | **Closed** (2026-03-24) |
 | P2-16 | -- (not yet filed) | **Won't Do** (intentional double scan for exact allocation) |
-| P2-NEW-1 | -- (not yet filed) | Open (normalize scalar ASCII loop) |
-| P2-NEW-2 | -- (not yet filed) | Open (unconditional isIndicVirama) |
-| P3-NEW-1 | -- (not yet filed) | Open (reverse over-allocation) |
+| P2-NEW-1 | -- (not yet filed) | **Closed** (replaced scalar loop with `simd.isAllAscii()`) |
+| P2-NEW-2 | -- (not yet filed) | **Closed** (guarded with `cp >= 0x094D`) |
+| P3-NEW-1 | -- (not yet filed) | **Closed** (capacity hint `str.len / 4 + 1`) |

@@ -1,7 +1,7 @@
 # Gap Analysis -- Resolved Gaps
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-24 (Phase 4 -- full codebase audit)
+**Last updated:** 2026-03-24 (Wave 4 -- gap closure completion)
 
 This file tracks gaps that have been resolved. Gap-IDs are never reused.
 
@@ -463,6 +463,26 @@ This file tracks gaps that have been resolved. Gap-IDs are never reused.
 - **Resolution summary:** Added `test-comprehensive` job to `.gitlab-ci.yml` following the same pattern as existing test jobs. The job runs `zig build test-comprehensive --summary all` in the `test` stage with the same `debian:bookworm-slim` image and zig installation anchor.
 - **Resolution evidence:** `.gitlab-ci.yml` -- `test-comprehensive` job definition.
 
+### GAP-0033: Gap-closure changes remain uncommitted in working tree
+
+- **Original Severity:** High
+- **Status:** Closed
+- **Resolved date:** 2026-03-24 (Wave 4)
+- **Issue:** [#87](https://gitlab.com/devnw/zig/strings/-/issues/87)
+- **Resolution summary:** All gap-closure changes from Waves 1-4 committed as `5c110b1` and pushed to remote. 538/538 tests pass, 76/76 build steps, format clean. Working tree is clean.
+- **Resolution evidence:** `git log --oneline -1` shows `5c110b1`. `git status` shows clean working tree. 538 tests pass (536 original + 2 new R4 tests).
+
+---
+
+### R4: Regex VM recursive backtracking -- stack overflow risk for deep nesting
+
+- **Original Severity:** Medium
+- **Status:** Closed
+- **Resolved date:** 2026-03-24 (Wave 4)
+- **Issue:** [#25](https://gitlab.com/devnw/zig/strings/-/issues/25)
+- **Resolution summary:** Added `MAX_RECURSION_DEPTH=500` guard to the recursive `matchAt()` call in the `split` opcode handler. The recursion depth is incremented before the recursive call and decremented after. When the limit is exceeded, the function returns null (no match) instead of recursing further. Two new tests added.
+- **Resolution evidence:** `src/extended/regex.zig:1038` (constant), `:1048` (field init), `:1273-1281` (depth check in split handler). Tests: "R4: deeply nested groups do not cause stack overflow", "R4: MAX_RECURSION_DEPTH prevents stack overflow on pathological split chains".
+
 ---
 
 ## Won't Do -- Satellite File Items (Phase 4)
@@ -482,6 +502,7 @@ The following items from satellite analysis files were marked Won't Do during th
 | P2-9 | PERF_GAP_ANALYSIS.md | isExtendedPictographic incomplete ranges | Requires full UCD Extended_Pictographic table |
 | P2-13 | PERF_GAP_ANALYSIS.md | ASCII fast-path in `getGraphemeBreak()` | Closed (implemented, not Won't Do) |
 | P2-16 | PERF_GAP_ANALYSIS.md | `replaceN()` single-pass rewrite | Intentional double scan for exact pre-allocation |
+| RM-1 | QUALITY_GAP_ANALYSIS.md | Duplicate lookup-table builders in manipulation.zig and search.zig | Semantic differences; ~15 lines not worth coupling |
 
 ---
 
@@ -496,3 +517,4 @@ The following items from satellite analysis files were marked Won't Do during th
 | Wave 4 (docs/CI) | 2026-03-24 | 2026-03-24 | GAP-0027, GAP-0032, Q47 closed |
 | Wave 2 (gap closure) | 2026-03-24 | 2026-03-24 | GAP-0012/0031 (Jaro OOB), GAP-0018 (Damerau doc), GAP-0019 (Levenshtein doc) truly closed |
 | Phase 4 satellite Won't Do | 2026-03-24 | 2026-03-24 | S6, S8, M2, M5, P1-4, Q14, Q25, Q26, P2-9, P2-13, P2-16 |
+| Wave 4 closures | 2026-03-24 | 2026-03-24 | GAP-0033, R4, S22/AC-1, AC-2, AC-3, RE-3, AC-4, P2-NEW-1, P2-NEW-2, P3-NEW-1, RM-1 (Won't Do) |

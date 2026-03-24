@@ -62,12 +62,15 @@ pub fn join(allocator: std.mem.Allocator, parts: []const []const u8, separator: 
         return allocator.alloc(u8, 0);
     }
 
-    // Calculate total length
+    // Calculate total length with checked arithmetic to prevent overflow
     var total_len: usize = 0;
     for (parts) |part| {
-        total_len += part.len;
+        total_len = std.math.add(usize, total_len, part.len) catch return error.Overflow;
     }
-    total_len += separator.len * (parts.len - 1);
+    if (parts.len > 1) {
+        const sep_total = std.math.mul(usize, separator.len, parts.len - 1) catch return error.Overflow;
+        total_len = std.math.add(usize, total_len, sep_total) catch return error.Overflow;
+    }
 
     var result = try allocator.alloc(u8, total_len);
     var pos: usize = 0;
@@ -193,7 +196,8 @@ pub fn padLeft(allocator: std.mem.Allocator, str: []const u8, width: usize, pad_
     }
 
     const pad_count = width - current_width;
-    const total_len = str.len + (pad_count * pad_char.len);
+    const pad_total = std.math.mul(usize, pad_count, pad_char.len) catch return error.Overflow;
+    const total_len = std.math.add(usize, str.len, pad_total) catch return error.Overflow;
     var result = try allocator.alloc(u8, total_len);
 
     var pos: usize = 0;
@@ -217,7 +221,8 @@ pub fn padRight(allocator: std.mem.Allocator, str: []const u8, width: usize, pad
     }
 
     const pad_count = width - current_width;
-    const total_len = str.len + (pad_count * pad_char.len);
+    const pad_total = std.math.mul(usize, pad_count, pad_char.len) catch return error.Overflow;
+    const total_len = std.math.add(usize, str.len, pad_total) catch return error.Overflow;
     var result = try allocator.alloc(u8, total_len);
 
     @memcpy(result[0..str.len], str);
@@ -237,7 +242,7 @@ pub fn repeat(allocator: std.mem.Allocator, str: []const u8, n: usize) ![]u8 {
         return allocator.alloc(u8, 0);
     }
 
-    const total_len = str.len * n;
+    const total_len = std.math.mul(usize, str.len, n) catch return error.Overflow;
     var result = try allocator.alloc(u8, total_len);
 
     var pos: usize = 0;
@@ -308,9 +313,18 @@ pub fn replaceN(allocator: std.mem.Allocator, str: []const u8, old: []const u8, 
         return result;
     }
 
-    // Calculate new size
-    const size_diff = @as(isize, @intCast(new.len)) - @as(isize, @intCast(old.len));
-    const new_len = @as(usize, @intCast(@as(isize, @intCast(str.len)) + size_diff * @as(isize, @intCast(count))));
+    // Calculate new size safely with checked arithmetic
+    const new_len = blk: {
+        if (new.len >= old.len) {
+            const extra_per = new.len - old.len;
+            const total_extra = std.math.mul(usize, extra_per, count) catch return error.Overflow;
+            break :blk std.math.add(usize, str.len, total_extra) catch return error.Overflow;
+        } else {
+            const less_per = old.len - new.len;
+            const total_less = std.math.mul(usize, less_per, count) catch return error.Overflow;
+            break :blk str.len - total_less; // Safe: total_less <= str.len since count * old.len <= str.len
+        }
+    };
 
     var result = try allocator.alloc(u8, new_len);
     var replacements: usize = 0;
@@ -367,7 +381,7 @@ pub fn substring(str: []const u8, start: usize, end: ?usize) []const u8 {
 pub fn concat(allocator: std.mem.Allocator, strings: []const []const u8) ![]u8 {
     var total_len: usize = 0;
     for (strings) |s| {
-        total_len += s.len;
+        total_len = std.math.add(usize, total_len, s.len) catch return error.Overflow;
     }
 
     var result = try allocator.alloc(u8, total_len);
@@ -916,4 +930,77 @@ test "containsFunc" {
 
     try testing.expect(containsFunc("hello123", isDigit));
     try testing.expect(!containsFunc("hello", isDigit));
+}
+
+// ============================================================================
+// Overflow protection tests
+// ============================================================================
+
+test "repeat overflow returns error" {
+    const testing = std.testing;
+    const result = repeat(testing.allocator, "ab", std.math.maxInt(usize));
+    try testing.expectError(error.Overflow, result);
+}
+
+test "repeat overflow three-byte string" {
+    const testing = std.testing;
+    const n = std.math.maxInt(usize) / 2;
+    const result = repeat(testing.allocator, "abc", n);
+    try testing.expectError(error.Overflow, result);
+}
+
+test "join overflow from part lengths" {
+    const testing = std.testing;
+    const big_len = std.math.maxInt(usize) / 2 + 1;
+    var dummy: [1]u8 = .{0};
+    const fake_slice: []const u8 = @as([*]const u8, &dummy)[0..big_len];
+    const parts = [_][]const u8{ fake_slice, fake_slice };
+    const result = join(testing.allocator, &parts, "");
+    try testing.expectError(error.Overflow, result);
+}
+
+test "join overflow from separator multiplication" {
+    const testing = std.testing;
+    const big_sep_len = std.math.maxInt(usize) / 2 + 1;
+    var dummy: [1]u8 = .{0};
+    const big_sep: []const u8 = @as([*]const u8, &dummy)[0..big_sep_len];
+    const parts = [_][]const u8{ "a", "b", "c" };
+    const result = join(testing.allocator, &parts, big_sep);
+    try testing.expectError(error.Overflow, result);
+}
+
+test "replaceN overflow with large replacement" {
+    const testing = std.testing;
+    var dummy: [1]u8 = .{'x'};
+    const big_len = std.math.maxInt(usize) / 2;
+    const big_replacement: []const u8 = @as([*]const u8, &dummy)[0..big_len];
+    const result = replaceN(testing.allocator, "aaa", "a", big_replacement, 0);
+    try testing.expectError(error.Overflow, result);
+}
+
+test "padLeft overflow with maxInt width" {
+    const testing = std.testing;
+    // Use a multi-byte pad character so that pad_count * pad_char.len overflows.
+    // "hi" has grapheme count 2, so pad_count = maxInt(usize) - 2, and
+    // multiplying by a 2-byte pad character overflows usize.
+    const result = padLeft(testing.allocator, "hi", std.math.maxInt(usize), "\xC3\xA9");
+    try testing.expectError(error.Overflow, result);
+}
+
+test "padRight overflow with maxInt width" {
+    const testing = std.testing;
+    // Same logic as padLeft overflow test: pad_count * pad_char.len overflows.
+    const result = padRight(testing.allocator, "hi", std.math.maxInt(usize), "\xC3\xA9");
+    try testing.expectError(error.Overflow, result);
+}
+
+test "concat overflow from large slice lengths" {
+    const testing = std.testing;
+    // Construct two fake slices whose combined .len overflows usize.
+    const big_len = std.math.maxInt(usize) / 2 + 1;
+    var dummy: [1]u8 = .{0};
+    const fake_slice: []const u8 = @as([*]const u8, &dummy)[0..big_len];
+    const parts = [_][]const u8{ fake_slice, fake_slice };
+    const result = concat(testing.allocator, &parts);
+    try testing.expectError(error.Overflow, result);
 }

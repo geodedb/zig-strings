@@ -276,7 +276,7 @@ fn isAllAscii512(bytes: []const u8) bool {
 
 /// Converts ASCII uppercase to lowercase using SIMD
 pub fn toLowerAscii(dest: []u8, src: []const u8) void {
-    std.debug.assert(dest.len >= src.len);
+    if (dest.len < src.len) @panic("simd: destination buffer too small");
 
     if (simd_level == .avx512 and src.len >= vector_size_512) {
         toLowerAscii512(dest, src);
@@ -357,7 +357,7 @@ fn toLowerAscii512(dest: []u8, src: []const u8) void {
 
 /// Converts ASCII lowercase to uppercase using SIMD
 pub fn toUpperAscii(dest: []u8, src: []const u8) void {
-    std.debug.assert(dest.len >= src.len);
+    if (dest.len < src.len) @panic("simd: destination buffer too small");
 
     if (simd_level == .avx512 and src.len >= vector_size_512) {
         toUpperAscii512(dest, src);
@@ -693,7 +693,12 @@ fn countContinuation512(bytes: []const u8) usize {
     return count;
 }
 
-/// Fast codepoint count using SIMD (estimates for valid UTF-8)
+/// Counts UTF-8 codepoints using SIMD. Assumes input is valid UTF-8.
+/// For untrusted input, use `utf8.countCodepoints()` which validates and
+/// returns `null` on invalid sequences. This function is a fast-path that
+/// skips validation: it counts non-continuation bytes (bytes where the top
+/// two bits are not `10`), which gives the correct codepoint count only
+/// when the input is well-formed UTF-8.
 pub fn countCodepoints(bytes: []const u8) usize {
     return bytes.len - countContinuationBytes(bytes);
 }
@@ -704,7 +709,7 @@ pub fn countCodepoints(bytes: []const u8) usize {
 
 /// Fast memory copy using SIMD (for aligned data)
 pub fn memcpySimd(dest: []u8, src: []const u8) void {
-    std.debug.assert(dest.len >= src.len);
+    if (dest.len < src.len) @panic("simd: destination buffer too small");
 
     if (simd_level == .avx512 and src.len >= vector_size_512) {
         memcpy512(dest, src);
@@ -934,4 +939,57 @@ test "simd level detection" {
     // Just verify it doesn't crash and returns a valid level
     const level = detectSimdLevel();
     try testing.expect(level == .none or level == .sse2 or level == .avx2 or level == .avx512);
+}
+
+test "toLowerAscii bounds check: exact fit" {
+    // dest.len == src.len must succeed (boundary condition)
+    var dest: [5]u8 = undefined;
+    toLowerAscii(&dest, "HELLO");
+    try std.testing.expectEqualSlices(u8, "hello", &dest);
+}
+
+test "toLowerAscii bounds check: dest larger than src" {
+    // dest.len > src.len must succeed
+    var dest: [32]u8 = undefined;
+    toLowerAscii(dest[0..5], "HELLO");
+    try std.testing.expectEqualSlices(u8, "hello", dest[0..5]);
+}
+
+test "toUpperAscii bounds check: exact fit" {
+    var dest: [5]u8 = undefined;
+    toUpperAscii(&dest, "hello");
+    try std.testing.expectEqualSlices(u8, "HELLO", &dest);
+}
+
+test "toUpperAscii bounds check: dest larger than src" {
+    var dest: [32]u8 = undefined;
+    toUpperAscii(dest[0..5], "hello");
+    try std.testing.expectEqualSlices(u8, "HELLO", dest[0..5]);
+}
+
+test "memcpySimd basic" {
+    var dest: [13]u8 = undefined;
+    const src = "Hello, World!";
+    memcpySimd(&dest, src);
+    try std.testing.expectEqualSlices(u8, src, &dest);
+}
+
+test "memcpySimd bounds check: exact fit" {
+    var dest: [5]u8 = undefined;
+    memcpySimd(&dest, "abcde");
+    try std.testing.expectEqualSlices(u8, "abcde", &dest);
+}
+
+test "memcpySimd bounds check: dest larger than src" {
+    var dest: [32]u8 = undefined;
+    memcpySimd(dest[0..5], "abcde");
+    try std.testing.expectEqualSlices(u8, "abcde", dest[0..5]);
+}
+
+test "memcpySimd long string" {
+    // Test with a string long enough to trigger SIMD paths
+    const src = "A" ** 256;
+    var dest: [256]u8 = undefined;
+    memcpySimd(&dest, src);
+    try std.testing.expectEqualSlices(u8, src, &dest);
 }

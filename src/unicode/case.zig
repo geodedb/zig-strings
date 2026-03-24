@@ -180,8 +180,26 @@ pub fn equalsCaseFold(a: Codepoint, b: Codepoint) bool {
 
 /// Converts a UTF-8 string to lowercase
 pub fn toLowerString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
+    // ASCII fast-path: when all bytes are < 0x80, we can convert directly
+    // without UTF-8 codepoint decoding overhead.
+    var all_ascii = true;
+    for (utf8) |b| {
+        if (b >= 0x80) {
+            all_ascii = false;
+            break;
+        }
+    }
+    if (all_ascii) {
+        const result = try allocator.alloc(u8, utf8.len);
+        for (utf8, 0..) |b, i| {
+            result[i] = if (b >= 'A' and b <= 'Z') b + 32 else b;
+        }
+        return result;
+    }
+
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, utf8.len);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = utf8, .i = 0 };
     var buf: [4]u8 = undefined;
@@ -197,8 +215,26 @@ pub fn toLowerString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
 
 /// Converts a UTF-8 string to uppercase
 pub fn toUpperString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
+    // ASCII fast-path: when all bytes are < 0x80, we can convert directly
+    // without UTF-8 codepoint decoding overhead.
+    var all_ascii = true;
+    for (utf8) |b| {
+        if (b >= 0x80) {
+            all_ascii = false;
+            break;
+        }
+    }
+    if (all_ascii) {
+        const result = try allocator.alloc(u8, utf8.len);
+        for (utf8, 0..) |b, i| {
+            result[i] = if (b >= 'a' and b <= 'z') b - 32 else b;
+        }
+        return result;
+    }
+
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, utf8.len);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = utf8, .i = 0 };
     var buf: [4]u8 = undefined;
@@ -221,6 +257,7 @@ pub fn toUpperString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
 pub fn toTitleString(allocator: std.mem.Allocator, utf8: []const u8) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, utf8.len);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = utf8, .i = 0 };
     var buf: [4]u8 = undefined;
@@ -338,4 +375,72 @@ test "toTitleString" {
     const title = try toTitleString(testing.allocator, "hello world");
     defer testing.allocator.free(title);
     try testing.expectEqualSlices(u8, "Hello World", title);
+}
+
+test "toLowerString ASCII fast-path" {
+    const testing = std.testing;
+
+    // Pure ASCII uppercase
+    const r1 = try toLowerString(testing.allocator, "HELLO WORLD 123!");
+    defer testing.allocator.free(r1);
+    try testing.expectEqualSlices(u8, "hello world 123!", r1);
+
+    // Already lowercase ASCII
+    const r2 = try toLowerString(testing.allocator, "already lower");
+    defer testing.allocator.free(r2);
+    try testing.expectEqualSlices(u8, "already lower", r2);
+
+    // Mixed case ASCII
+    const r3 = try toLowerString(testing.allocator, "HeLLo WoRLd");
+    defer testing.allocator.free(r3);
+    try testing.expectEqualSlices(u8, "hello world", r3);
+
+    // Empty string
+    const r4 = try toLowerString(testing.allocator, "");
+    defer testing.allocator.free(r4);
+    try testing.expectEqualSlices(u8, "", r4);
+
+    // ASCII with digits and punctuation
+    const r5 = try toLowerString(testing.allocator, "ABC-123_DEF.GHI");
+    defer testing.allocator.free(r5);
+    try testing.expectEqualSlices(u8, "abc-123_def.ghi", r5);
+
+    // Non-ASCII falls through to codepoint path (verify correctness)
+    const r6 = try toLowerString(testing.allocator, "CAF\xc3\x89");
+    defer testing.allocator.free(r6);
+    try testing.expectEqualSlices(u8, "caf\xc3\xa9", r6);
+}
+
+test "toUpperString ASCII fast-path" {
+    const testing = std.testing;
+
+    // Pure ASCII lowercase
+    const r1 = try toUpperString(testing.allocator, "hello world 123!");
+    defer testing.allocator.free(r1);
+    try testing.expectEqualSlices(u8, "HELLO WORLD 123!", r1);
+
+    // Already uppercase ASCII
+    const r2 = try toUpperString(testing.allocator, "ALREADY UPPER");
+    defer testing.allocator.free(r2);
+    try testing.expectEqualSlices(u8, "ALREADY UPPER", r2);
+
+    // Mixed case ASCII
+    const r3 = try toUpperString(testing.allocator, "HeLLo WoRLd");
+    defer testing.allocator.free(r3);
+    try testing.expectEqualSlices(u8, "HELLO WORLD", r3);
+
+    // Empty string
+    const r4 = try toUpperString(testing.allocator, "");
+    defer testing.allocator.free(r4);
+    try testing.expectEqualSlices(u8, "", r4);
+
+    // ASCII with digits and punctuation
+    const r5 = try toUpperString(testing.allocator, "abc-123_def.ghi");
+    defer testing.allocator.free(r5);
+    try testing.expectEqualSlices(u8, "ABC-123_DEF.GHI", r5);
+
+    // Non-ASCII falls through to codepoint path (verify correctness)
+    const r6 = try toUpperString(testing.allocator, "caf\xc3\xa9");
+    defer testing.allocator.free(r6);
+    try testing.expectEqualSlices(u8, "CAF\xc3\x89", r6);
 }

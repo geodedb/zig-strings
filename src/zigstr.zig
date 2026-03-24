@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2024-2025 CodePros
 
-//! ZigStr - Main entry point for the Zig string library
+//! ZigStr - Core string operations for the Zig string library.
 //!
-//! This module provides a unified API for string manipulation with
-//! full Unicode support, including:
+//! This is the core API entry point (module name: `zigstr`). It provides
+//! essential Unicode string operations without extended features. For the
+//! full API including regex, fuzzy matching, phonetic algorithms, locale
+//! formatting, ICU compatibility, legacy encodings, and parallel operations,
+//! use the `strings` module instead.
+//!
+//! ## Core features provided by this module
+//!
 //! - UTF-8, UTF-16, UTF-32, ASCII, and Latin-1 encoding/decoding
 //! - Unicode normalization (NFC, NFD, NFKC, NFKD)
 //! - Grapheme cluster segmentation
@@ -68,42 +74,14 @@ pub const StringError = types_mod.StringError;
 // Encoding Types
 // ============================================================================
 
-/// Supported string encodings
-pub const Encoding = enum {
-    utf8,
-    utf16le,
-    utf16be,
-    utf32le,
-    utf32be,
-    ascii,
-    latin1,
-};
+/// Supported string encodings (re-exported from types)
+pub const Encoding = types_mod.Encoding;
 
-/// Unicode normalization forms (UAX #15)
-pub const NormalizationForm = enum {
-    /// Canonical Decomposition + Canonical Composition
-    nfc,
-    /// Canonical Decomposition
-    nfd,
-    /// Compatibility Decomposition + Canonical Composition
-    nfkc,
-    /// Compatibility Decomposition
-    nfkd,
-};
+/// Unicode normalization forms (re-exported from types, UAX #15)
+pub const NormalizationForm = types_mod.NormalizationForm;
 
-/// Collation strength levels (UTS #10)
-pub const CollationStrength = enum {
-    /// Base character differences (a vs b)
-    primary,
-    /// Accent differences (a vs a)
-    secondary,
-    /// Case differences (a vs A)
-    tertiary,
-    /// Punctuation differences
-    quaternary,
-    /// Code point differences
-    identical,
-};
+/// Collation strength levels (re-exported from collation, UTS #10)
+pub const CollationStrength = collation_mod.Strength;
 
 // ============================================================================
 // Encoding Modules
@@ -209,13 +187,7 @@ pub fn countCodepoints(bytes: []const u8) ?usize {
 
 /// Normalizes a string to the specified form
 pub fn normalize(allocator: std.mem.Allocator, str: []const u8, form: NormalizationForm) ![]u8 {
-    const norm_form: normalization_mod.NormalizationForm = switch (form) {
-        .nfc => .nfc,
-        .nfd => .nfd,
-        .nfkc => .nfkc,
-        .nfkd => .nfkd,
-    };
-    return normalization_mod.normalize(allocator, str, norm_form);
+    return normalization_mod.normalize(allocator, str, form);
 }
 
 /// Converts a string to lowercase
@@ -235,14 +207,7 @@ pub fn toTitle(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
 
 /// Compares two strings using Unicode collation
 pub fn compare(a: []const u8, b: []const u8, strength: CollationStrength) std.math.Order {
-    const coll_strength: collation_mod.Strength = switch (strength) {
-        .primary => .primary,
-        .secondary => .secondary,
-        .tertiary => .tertiary,
-        .quaternary => .quaternary,
-        .identical => .identical,
-    };
-    return collation_mod.compare(a, b, .{ .strength = coll_strength });
+    return collation_mod.compare(a, b, .{ .strength = strength });
 }
 
 /// Checks if two strings are equal using Unicode collation

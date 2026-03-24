@@ -70,37 +70,31 @@ test "NFD: Basic Latin unchanged" {
 test "NFKC: Compatibility composition" {
     const allocator = testing.allocator;
     // ﬁ (U+FB01) -> fi (expected per Unicode standard)
-    // Note: Full NFKC implementation would decompose ligatures
-    // Current implementation may return input unchanged
+    // NFKC must decompose the fi ligature to its compatibility equivalent "fi"
     const input = "\xEF\xAC\x81";
     const result = try strings.normalization.normalize(allocator, input, .nfkc);
     defer allocator.free(result);
-    // Accept either full compatibility decomposition or passthrough
-    try testing.expect(std.mem.eql(u8, result, "fi") or std.mem.eql(u8, result, input));
+    try testing.expectEqualStrings("fi", result);
 }
 
 test "NFKC: Fullwidth to ASCII" {
     const allocator = testing.allocator;
     // Ａ (U+FF21) -> A (expected per Unicode standard)
-    // Note: Full NFKC implementation would normalize fullwidth chars
-    // Current implementation may return input unchanged
+    // NFKC must normalize fullwidth Latin A to standard ASCII A
     const input = "\xEF\xBC\xA1";
     const result = try strings.normalization.normalize(allocator, input, .nfkc);
     defer allocator.free(result);
-    // Accept either full compatibility normalization or passthrough
-    try testing.expect(std.mem.eql(u8, result, "A") or std.mem.eql(u8, result, input));
+    try testing.expectEqualStrings("A", result);
 }
 
 test "NFKD: Compatibility decomposition" {
     const allocator = testing.allocator;
     // ① (U+2460) -> 1 (expected per Unicode standard)
-    // Note: Full NFKD implementation would decompose to ASCII
-    // Current implementation may return input unchanged
+    // NFKD must decompose the circled digit one to "1"
     const input = "\xE2\x91\xA0";
     const result = try strings.normalization.normalize(allocator, input, .nfkd);
     defer allocator.free(result);
-    // Accept either full compatibility decomposition or passthrough
-    try testing.expect(std.mem.eql(u8, result, "1") or std.mem.eql(u8, result, input));
+    try testing.expectEqualStrings("1", result);
 }
 
 test "Normalization: Empty string" {

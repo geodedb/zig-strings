@@ -222,48 +222,52 @@ pub fn equals(a: []const u8, b: []const u8, options: CollationOptions) bool {
 
 /// Gets a sort key for a string (for efficient repeated comparisons)
 pub fn getSortKey(allocator: std.mem.Allocator, str: []const u8, options: CollationOptions) ![]u8 {
-    var key: std.ArrayList(u8) = .empty;
-    errdefer key.deinit(allocator);
+    const strength = options.strength;
+    const need_secondary = @intFromEnum(strength) >= @intFromEnum(Strength.secondary);
+    const need_tertiary = @intFromEnum(strength) >= @intFromEnum(Strength.tertiary);
+
+    // Single pass: collect all weight levels simultaneously
+    var primary_weights: std.ArrayList(u8) = .empty;
+    defer primary_weights.deinit(allocator);
+    var secondary_weights: std.ArrayList(u8) = .empty;
+    defer secondary_weights.deinit(allocator);
+    var tertiary_weights: std.ArrayList(u8) = .empty;
+    defer tertiary_weights.deinit(allocator);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = str, .i = 0 };
-
-    // Collect primary weights
     while (iter.nextCodepoint()) |cp| {
         const elem = getCollationElement(cp);
         if (elem.primary != 0) {
-            try key.append(allocator, @truncate(elem.primary >> 8));
-            try key.append(allocator, @truncate(elem.primary & 0xFF));
+            try primary_weights.append(allocator, @truncate(elem.primary >> 8));
+            try primary_weights.append(allocator, @truncate(elem.primary & 0xFF));
+        }
+        if (need_secondary and elem.secondary != 0x0020) {
+            try secondary_weights.append(allocator, @truncate(elem.secondary & 0xFF));
+        }
+        if (need_tertiary) {
+            try tertiary_weights.append(allocator, @truncate(elem.tertiary & 0xFF));
         }
     }
 
-    if (options.strength == .primary) {
-        return key.toOwnedSlice(allocator);
+    // Build the final key: primary [+ separator + secondary [+ separator + tertiary]]
+    var key: std.ArrayList(u8) = .empty;
+    errdefer key.deinit(allocator);
+
+    const secondary_len: usize = if (need_secondary) 1 + secondary_weights.items.len else 0;
+    const tertiary_len: usize = if (need_tertiary) 1 + tertiary_weights.items.len else 0;
+    const total_len = primary_weights.items.len + secondary_len + tertiary_len;
+    try key.ensureTotalCapacity(allocator, total_len);
+
+    key.appendSliceAssumeCapacity(primary_weights.items);
+
+    if (need_secondary) {
+        key.appendAssumeCapacity(0); // Separator
+        key.appendSliceAssumeCapacity(secondary_weights.items);
     }
 
-    // Separator
-    try key.append(allocator, 0);
-
-    // Collect secondary weights
-    iter.i = 0;
-    while (iter.nextCodepoint()) |cp| {
-        const elem = getCollationElement(cp);
-        if (elem.secondary != 0x0020) { // Skip default
-            try key.append(allocator, @truncate(elem.secondary & 0xFF));
-        }
-    }
-
-    if (options.strength == .secondary) {
-        return key.toOwnedSlice(allocator);
-    }
-
-    // Separator
-    try key.append(allocator, 0);
-
-    // Collect tertiary weights
-    iter.i = 0;
-    while (iter.nextCodepoint()) |cp| {
-        const elem = getCollationElement(cp);
-        try key.append(allocator, @truncate(elem.tertiary & 0xFF));
+    if (need_tertiary) {
+        key.appendAssumeCapacity(0); // Separator
+        key.appendSliceAssumeCapacity(tertiary_weights.items);
     }
 
     return key.toOwnedSlice(allocator);

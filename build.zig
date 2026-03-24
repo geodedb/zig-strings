@@ -676,7 +676,6 @@ pub fn build(b: *std.Build) void {
         parallel_mod.addImport("spice", sm);
     }
 
-
     // ============================================================
     // Main Public API Modules
     // ============================================================
@@ -914,6 +913,22 @@ pub fn build(b: *std.Build) void {
         .root_module = strings_mod,
     });
     test_step.dependOn(&b.addRunArtifact(test_lib).step);
+
+    // Parallel module test
+    const test_parallel = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/parallel.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "build_options", .module = build_options.createModule() },
+            },
+        }),
+    });
+    if (spice_mod) |sm| {
+        test_parallel.root_module.addImport("spice", sm);
+    }
+    test_step.dependOn(&b.addRunArtifact(test_parallel).step);
 
     // ============================================================
     // Encoding Tests
@@ -1328,7 +1343,7 @@ pub fn build(b: *std.Build) void {
     // ============================================================
 
     const fmt = b.addFmt(.{
-        .paths = &.{ "src", "tests", "build.zig" },
+        .paths = &.{ "src", "tests", "bench", "examples", "build.zig" },
         .check = true,
     });
 

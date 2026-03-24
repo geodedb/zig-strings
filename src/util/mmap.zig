@@ -79,7 +79,10 @@ pub const MappedString = struct {
 
     const Self = @This();
 
-    /// Open a file and map it into memory
+    /// Opens a file for memory-mapped string access.
+    /// WARNING: This function does not sanitize the path. If the path comes from
+    /// untrusted input, callers MUST validate it to prevent path traversal attacks
+    /// (e.g., paths containing "../" or absolute paths escaping a sandbox).
     pub fn open(allocator: std.mem.Allocator, path: []const u8) MmapError!Self {
         return openAdvanced(allocator, path, .{});
     }

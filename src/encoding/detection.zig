@@ -26,7 +26,12 @@ pub const DetectionResult = struct {
     content_offset: usize,
 };
 
-/// Detects the encoding of a byte sequence
+/// Detects the encoding of the given bytes.
+/// WARNING: Heuristic detection can be unreliable. Callers MUST check the
+/// `confidence` field of the result before trusting the detected encoding.
+/// A confidence below 0.5 indicates uncertain detection. When no encoding
+/// can be confidently identified, the function falls back to UTF-8 with
+/// a low confidence value (0.3).
 pub fn detect(bytes: []const u8) DetectionResult {
     // Try BOM detection first
     if (detectBom(bytes)) |result| {

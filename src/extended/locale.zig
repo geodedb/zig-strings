@@ -286,7 +286,10 @@ pub const Locale = struct {
         return result.toOwnedSlice(allocator);
     }
 
-    /// Format date (simple implementation)
+    /// Format date (simple implementation).
+    /// Note: Currently outputs MM/DD/YY format regardless of locale.
+    /// Locale-aware date formatting is not yet implemented.
+    /// The `self` (locale) parameter is currently unused.
     pub fn formatDate(
         self: Locale,
         allocator: std.mem.Allocator,
@@ -335,7 +338,11 @@ fn monthName(month: u8, full: bool) []const u8 {
     return if (full) full_names[month - 1] else short_names[month - 1];
 }
 
-fn formatNumberWithOpts(allocator: std.mem.Allocator, value: f64, opts: NumberFormat) ![]u8 {
+fn formatNumberWithOpts(allocator: std.mem.Allocator, value: f64, opts: NumberFormat) (error{InvalidNumber} || std.mem.Allocator.Error)![]u8 {
+    // Reject NaN and Inf at the boundary -- these have no meaningful numeric formatting
+    // and would cause undefined behavior in @intFromFloat below.
+    if (std.math.isNan(value) or std.math.isInf(value)) return error.InvalidNumber;
+
     var result: std.ArrayListUnmanaged(u8) = .{};
     errdefer result.deinit(allocator);
 
@@ -351,8 +358,10 @@ fn formatNumberWithOpts(allocator: std.mem.Allocator, value: f64, opts: NumberFo
     const frac_part = abs_value - @as(f64, @floatFromInt(int_part));
 
     // Format integer part with grouping
+    // A u64 max is 20 digits; 32 bytes is sufficient. Use bufPrint with error
+    // propagation instead of catch unreachable for safety.
     var int_buf: [32]u8 = undefined;
-    const int_str = std.fmt.bufPrint(&int_buf, "{d}", .{int_part}) catch unreachable;
+    const int_str = std.fmt.bufPrint(&int_buf, "{d}", .{int_part}) catch return error.InvalidNumber;
     const int_len = int_str.len;
 
     if (opts.use_grouping and int_len > opts.group_size) {
@@ -744,4 +753,61 @@ test "formatList de_DE" {
     defer testing.allocator.free(result);
 
     try testing.expectEqualStrings("Apfel und Orange", result);
+}
+
+test "formatDate short outputs US format regardless of locale" {
+    const testing = std.testing;
+
+    // en_US short date
+    {
+        const locale = Locale.get(.en_US);
+        const result = try locale.formatDate(testing.allocator, 2025, 3, 15, .short);
+        defer testing.allocator.free(result);
+        try testing.expectEqualStrings("03/15/25", result);
+    }
+
+    // de_DE also outputs US format (locale is currently ignored)
+    {
+        const locale = Locale.get(.de_DE);
+        const result = try locale.formatDate(testing.allocator, 2025, 3, 15, .short);
+        defer testing.allocator.free(result);
+        try testing.expectEqualStrings("03/15/25", result);
+    }
+
+    // Medium style
+    {
+        const locale = Locale.get(.en_US);
+        const result = try locale.formatDate(testing.allocator, 2025, 12, 25, .medium);
+        defer testing.allocator.free(result);
+        try testing.expectEqualStrings("Dec 25, 2025", result);
+    }
+
+    // Full style (ISO format)
+    {
+        const locale = Locale.get(.en_US);
+        const result = try locale.formatDate(testing.allocator, 2025, 1, 5, .full);
+        defer testing.allocator.free(result);
+        try testing.expectEqualStrings("2025-01-05", result);
+    }
+}
+
+test "formatNumber NaN returns error" {
+    const testing = std.testing;
+    const locale = Locale.get(.en_US);
+
+    try testing.expectError(error.InvalidNumber, locale.formatNumber(testing.allocator, std.math.nan(f64)));
+}
+
+test "formatNumber positive infinity returns error" {
+    const testing = std.testing;
+    const locale = Locale.get(.en_US);
+
+    try testing.expectError(error.InvalidNumber, locale.formatNumber(testing.allocator, std.math.inf(f64)));
+}
+
+test "formatNumber negative infinity returns error" {
+    const testing = std.testing;
+    const locale = Locale.get(.en_US);
+
+    try testing.expectError(error.InvalidNumber, locale.formatNumber(testing.allocator, -std.math.inf(f64)));
 }

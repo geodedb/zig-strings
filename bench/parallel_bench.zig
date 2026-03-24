@@ -113,7 +113,7 @@ fn benchParallelMap(allocator: std.mem.Allocator, size: usize) !BenchResult {
     // Warmup
     for (0..WARMUP_RUNS) |_| {
         sequentialMap(input, output_seq, toLower);
-        parallel.parallelMap(u8, input, output_par, toLower);
+        parallel.parallelMap(u8, input, output_par, toLower) catch {};
     }
 
     // Benchmark sequential
@@ -129,7 +129,7 @@ fn benchParallelMap(allocator: std.mem.Allocator, size: usize) !BenchResult {
     var par_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
         var timer = try std.time.Timer.start();
-        parallel.parallelMap(u8, input, output_par, toLower);
+        parallel.parallelMap(u8, input, output_par, toLower) catch {};
         par_total += timer.read();
         std.mem.doNotOptimizeAway(output_par.ptr);
     }

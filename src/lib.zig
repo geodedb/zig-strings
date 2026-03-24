@@ -3,22 +3,29 @@
 
 //! Strings - A comprehensive string manipulation library for Zig.
 //!
-//! This library provides full Unicode support including UTF-8, UTF-16, and UTF-32
-//! encoding/decoding, Unicode normalization, grapheme cluster handling, case
-//! conversion, collation, and much more.
+//! This is the full API entry point (module name: `strings`). It includes all
+//! core Unicode operations plus extended features such as regex, fuzzy matching,
+//! phonetic algorithms, locale-aware formatting, ICU compatibility, legacy
+//! encoding support, and parallel string operations.
+//!
+//! For core string operations without extended features, use the `zigstr` module
+//! instead. Prefer `strings` when you need the complete feature set.
 //!
 //! ## Features
 //!
 //! - **Multiple Encodings**: UTF-8, UTF-16 (LE/BE), UTF-32 (LE/BE), ASCII, Latin-1
-//! - **Unicode Support**: Full Unicode 15.0 character properties and algorithms
+//! - **Unicode Support**: Full Unicode 15.1 character properties and algorithms
 //! - **Normalization**: NFC, NFD, NFKC, NFKD normalization forms (UAX #15)
 //! - **Segmentation**: Grapheme clusters, words, sentences (UAX #29)
-//! - **Case Conversion**: Locale-aware upper/lower/title case mapping
+//! - **Case Conversion**: Full upper/lower/title case mapping (Unicode-aware)
 //! - **Collation**: Unicode Collation Algorithm (UTS #10)
 //! - **String Types**: Managed String and String16 types with allocation
 //! - **String Builder**: Efficient string construction
 //! - **SIMD Acceleration**: Vectorized operations where available
-//! - **Zero Dependencies**: Pure Zig, no external dependencies
+//! - **Extended**: Regex, fuzzy matching, phonetic algorithms, locale formatting
+//! - **Legacy Encodings**: Windows code pages, ISO-8859, CJK encodings, Big5
+//! - **Parallel Operations**: Spice-based parallel string processing
+//! - **Minimal Dependencies**: Pure Zig with optional spice parallelism dependency
 //!
 //! ## Quick Start
 //!
@@ -164,6 +171,9 @@ pub const mmap = @import("mmap");
 
 /// Lazy Unicode normalization
 pub const lazy_norm = @import("lazy_norm");
+
+/// Parallel string operations (spice-based)
+pub const parallel = @import("parallel");
 
 // ============================================================
 // Extended Features
@@ -327,14 +337,61 @@ pub fn endsWith(haystack: []const u8, suffix: []const u8) bool {
 // ============================================================
 
 test {
-    // Import all test files
+    // Import all public modules so their inline tests are discovered.
+    // Core types
     _ = types;
     _ = codepoint;
+    // Encodings
     _ = utf8;
     _ = utf16;
     _ = utf32;
     _ = ascii;
     _ = latin1;
+    // Unicode
+    _ = categories;
+    _ = normalization;
+    _ = grapheme;
+    _ = word;
+    _ = sentence;
+    _ = case;
+    _ = collation;
+    // Encoding utilities
+    _ = detection;
+    _ = bom;
+    _ = transcoding;
+    // Iterators
+    _ = iterator;
+    // Operations
+    _ = search;
+    _ = comparison;
+    _ = manipulation;
+    // Conversion
+    _ = numeric;
+    _ = formatting;
+    // String types
+    _ = string;
+    _ = string16;
+    _ = builder;
+    // Utilities
+    _ = simd;
+    _ = pool;
+    _ = rope;
+    _ = mmap;
+    _ = lazy_norm;
+    _ = parallel;
+    // Extended features
+    _ = regex;
+    _ = fuzzy;
+    _ = phonetic;
+    _ = locale;
+    _ = icu;
+    // Legacy encodings
+    _ = windows_codepage;
+    _ = iso8859;
+    _ = chinese_encoding;
+    _ = japanese_encoding;
+    _ = korean_encoding;
+    _ = big5;
 }
 
 test "convenience functions" {

@@ -17,30 +17,51 @@ pub const StringError = types.StringError;
 pub fn interpolate(allocator: std.mem.Allocator, template: []const u8, args: []const []const u8) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, template.len);
 
     var arg_index: usize = 0;
     var i: usize = 0;
+    var literal_start: usize = 0;
 
     while (i < template.len) {
         if (i + 1 < template.len and template[i] == '{' and template[i + 1] == '}') {
+            // Flush literal span before placeholder
+            if (i > literal_start) {
+                try result.appendSlice(allocator, template[literal_start..i]);
+            }
             // Replace {} with argument
             if (arg_index < args.len) {
                 try result.appendSlice(allocator, args[arg_index]);
                 arg_index += 1;
             }
             i += 2;
+            literal_start = i;
         } else if (i + 1 < template.len and template[i] == '{' and template[i + 1] == '{') {
+            // Flush literal span before escaped brace
+            if (i > literal_start) {
+                try result.appendSlice(allocator, template[literal_start..i]);
+            }
             // Escaped {
             try result.append(allocator, '{');
             i += 2;
+            literal_start = i;
         } else if (i + 1 < template.len and template[i] == '}' and template[i + 1] == '}') {
+            // Flush literal span before escaped brace
+            if (i > literal_start) {
+                try result.appendSlice(allocator, template[literal_start..i]);
+            }
             // Escaped }
             try result.append(allocator, '}');
             i += 2;
+            literal_start = i;
         } else {
-            try result.append(allocator, template[i]);
             i += 1;
         }
+    }
+
+    // Flush any remaining literal text
+    if (literal_start < template.len) {
+        try result.appendSlice(allocator, template[literal_start..]);
     }
 
     return result.toOwnedSlice(allocator);
@@ -54,14 +75,22 @@ pub fn interpolateNamed(
 ) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, template.len);
 
     var i: usize = 0;
+    var literal_start: usize = 0;
+
     while (i < template.len) {
         if (template[i] == '{') {
             // Check for escaped brace
             if (i + 1 < template.len and template[i + 1] == '{') {
+                // Flush literal span
+                if (i > literal_start) {
+                    try result.appendSlice(allocator, template[literal_start..i]);
+                }
                 try result.append(allocator, '{');
                 i += 2;
+                literal_start = i;
                 continue;
             }
 
@@ -72,6 +101,11 @@ pub fn interpolateNamed(
             }
 
             if (end < template.len) {
+                // Flush literal span before placeholder
+                if (i > literal_start) {
+                    try result.appendSlice(allocator, template[literal_start..i]);
+                }
+
                 const name = template[i + 1 .. end];
 
                 // Find matching value
@@ -90,23 +124,33 @@ pub fn interpolateNamed(
                 }
 
                 i = end + 1;
+                literal_start = i;
             } else {
-                try result.append(allocator, template[i]);
+                // No closing brace found; this '{' is literal, just advance
                 i += 1;
             }
         } else if (template[i] == '}') {
             // Check for escaped brace
             if (i + 1 < template.len and template[i + 1] == '}') {
+                // Flush literal span
+                if (i > literal_start) {
+                    try result.appendSlice(allocator, template[literal_start..i]);
+                }
                 try result.append(allocator, '}');
                 i += 2;
+                literal_start = i;
             } else {
-                try result.append(allocator, template[i]);
+                // Lone '}' is literal, just advance
                 i += 1;
             }
         } else {
-            try result.append(allocator, template[i]);
             i += 1;
         }
+    }
+
+    // Flush any remaining literal text
+    if (literal_start < template.len) {
+        try result.appendSlice(allocator, template[literal_start..]);
     }
 
     return result.toOwnedSlice(allocator);
@@ -204,6 +248,7 @@ pub fn wrap(allocator: std.mem.Allocator, text: []const u8, width: usize) ![]u8 
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
+    try result.ensureTotalCapacity(allocator, text.len);
 
     var line_start: usize = 0;
     var last_space: ?usize = null;
@@ -419,4 +464,56 @@ test "indent" {
     const result = try indent(testing.allocator, "line1\nline2", "  ");
     defer testing.allocator.free(result);
     try testing.expectEqualSlices(u8, "  line1\n  line2", result);
+}
+
+test "interpolate empty template" {
+    const testing = std.testing;
+
+    const result = try interpolate(testing.allocator, "", &[_][]const u8{});
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "", result);
+}
+
+test "interpolate pure literal no placeholders" {
+    const testing = std.testing;
+
+    const result = try interpolate(testing.allocator, "no placeholders here", &[_][]const u8{});
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "no placeholders here", result);
+}
+
+test "interpolate adjacent placeholders" {
+    const testing = std.testing;
+
+    const result = try interpolate(testing.allocator, "{}{}{}", &[_][]const u8{ "a", "b", "c" });
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "abc", result);
+}
+
+test "interpolateNamed empty template" {
+    const testing = std.testing;
+
+    const result = try interpolateNamed(testing.allocator, "", &[_]NamedValue{});
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "", result);
+}
+
+test "interpolateNamed pure literal no placeholders" {
+    const testing = std.testing;
+
+    const result = try interpolateNamed(testing.allocator, "no placeholders here", &[_]NamedValue{});
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "no placeholders here", result);
+}
+
+test "interpolateNamed adjacent placeholders" {
+    const testing = std.testing;
+
+    const result = try interpolateNamed(testing.allocator, "{x}{y}{z}", &[_]NamedValue{
+        .{ .name = "x", .value = "1" },
+        .{ .name = "y", .value = "2" },
+        .{ .name = "z", .value = "3" },
+    });
+    defer testing.allocator.free(result);
+    try testing.expectEqualSlices(u8, "123", result);
 }

@@ -52,9 +52,9 @@ pub fn main() !void {
 
     // Simulate many duplicate strings (like parsing keywords)
     const keywords = [_][]const u8{
-        "function", "if", "else", "while", "for", "return",
-        "function", "if", "if", "return", "else", "function",
-        "while", "for", "return", "if", "else", "function",
+        "function", "if",  "else",   "while",  "for",  "return",
+        "function", "if",  "if",     "return", "else", "function",
+        "while",    "for", "return", "if",     "else", "function",
     };
 
     std.debug.print("Interning {} string instances...\n", .{keywords.len});
@@ -177,7 +177,7 @@ pub fn main() !void {
 
     // Pre-intern all language keywords
     const lang_keywords = [_][]const u8{
-        "fn", "const", "var", "if", "else", "while", "for",
+        "fn",     "const", "var",      "if",  "else",   "while", "for",
         "return", "break", "continue", "pub", "struct", "enum",
     };
 

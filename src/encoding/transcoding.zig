@@ -33,7 +33,7 @@ pub const TranscodeOptions = struct {
 pub fn utf8ToUtf16(allocator: std.mem.Allocator, utf8: []const u8, endian: std.builtin.Endian) ![]u8 {
     // Calculate output size
     const utf16_len = utf8_mod.utf16Length(utf8) orelse return StringError.InvalidUtf8;
-    const byte_len = utf16_len * 2;
+    const byte_len = std.math.mul(usize, utf16_len, 2) catch return error.Overflow;
 
     var result = try allocator.alloc(u8, byte_len);
     errdefer allocator.free(result);
@@ -107,7 +107,7 @@ pub fn utf16ToUtf8(allocator: std.mem.Allocator, utf16_bytes: []const u8, endian
 /// Converts UTF-8 to UTF-32 with allocator
 pub fn utf8ToUtf32(allocator: std.mem.Allocator, utf8: []const u8, endian: std.builtin.Endian) ![]u8 {
     const cp_count = utf8_mod.countCodepoints(utf8) orelse return StringError.InvalidUtf8;
-    const byte_len = cp_count * 4;
+    const byte_len = std.math.mul(usize, cp_count, 4) catch return error.Overflow;
 
     var result = try allocator.alloc(u8, byte_len);
     errdefer allocator.free(result);
@@ -349,4 +349,22 @@ test "transcode" {
     defer testing.allocator.free(back);
 
     try testing.expectEqualSlices(u8, utf8_str, back);
+}
+
+// ============================================================================
+// Overflow protection tests
+// ============================================================================
+
+test "utf8ToUtf16 overflow protection" {
+    const testing = std.testing;
+    const result = try utf8ToUtf16(testing.allocator, "Hello", .little);
+    defer testing.allocator.free(result);
+    try testing.expectEqual(@as(usize, 10), result.len);
+}
+
+test "utf8ToUtf32 overflow protection" {
+    const testing = std.testing;
+    const result = try utf8ToUtf32(testing.allocator, "Hi", .little);
+    defer testing.allocator.free(result);
+    try testing.expectEqual(@as(usize, 8), result.len);
 }

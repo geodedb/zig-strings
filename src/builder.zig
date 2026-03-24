@@ -80,9 +80,10 @@ pub const StringBuilder = struct {
 
     /// Appends a character repeated n times
     pub fn appendRepeat(self: *StringBuilder, str: []const u8, n: usize) !void {
-        var i: usize = 0;
-        while (i < n) : (i += 1) {
-            try self.buffer.appendSlice(self.allocator, str);
+        const total = std.math.mul(usize, str.len, n) catch return error.OutOfMemory;
+        try self.buffer.ensureUnusedCapacity(self.allocator, total);
+        for (0..n) |_| {
+            self.buffer.appendSliceAssumeCapacity(str);
         }
     }
 
@@ -155,16 +156,21 @@ pub const StringBuilder = struct {
         var new_buffer: std.ArrayList(u8) = .empty;
         errdefer new_buffer.deinit(self.allocator);
 
+        // Pre-allocate roughly the same size as the current buffer
+        try new_buffer.ensureTotalCapacity(self.allocator, self.buffer.items.len);
+
         var pos: usize = 0;
         while (pos < self.buffer.items.len) {
-            if (pos + old.len <= self.buffer.items.len and
-                std.mem.eql(u8, self.buffer.items[pos..][0..old.len], old))
-            {
+            if (std.mem.indexOf(u8, self.buffer.items[pos..], old)) |idx| {
+                // Bulk-copy bytes before the match
+                try new_buffer.appendSlice(self.allocator, self.buffer.items[pos .. pos + idx]);
+                // Copy replacement
                 try new_buffer.appendSlice(self.allocator, new);
-                pos += old.len;
+                pos += idx + old.len;
             } else {
-                try new_buffer.append(self.allocator, self.buffer.items[pos]);
-                pos += 1;
+                // Bulk-copy all remaining bytes (no more matches)
+                try new_buffer.appendSlice(self.allocator, self.buffer.items[pos..]);
+                break;
             }
         }
 

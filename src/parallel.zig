@@ -5,6 +5,14 @@
 //!
 //! Provides low-overhead parallelism for compute-intensive string operations
 //! using the fork/join pattern with sub-nanosecond overhead.
+//!
+//! ## Pool Lifecycle
+//!
+//! This module maintains a lazily-initialized global thread pool. The pool is
+//! created on first use (via `getPool()`) and is **never freed** unless
+//! `deinitPool()` is explicitly called by the caller. Callers must ensure that
+//! all parallel operations have completed before calling `deinitPool()`;
+//! calling it while operations are in-flight causes undefined behavior.
 
 const std = @import("std");
 const build_options = @import("build_options");
@@ -39,7 +47,9 @@ pub fn getPool() if (build_options.enable_spice) *spice.ThreadPool else void {
     return &global_pool.?;
 }
 
-/// Deinitialize the global spice pool
+/// Deinitializes the global thread pool.
+/// SAFETY: Must only be called after all parallel operations have completed.
+/// Calling this while operations are in-flight causes undefined behavior.
 pub fn deinitPool() void {
     if (!build_options.enable_spice) return;
 
@@ -108,7 +118,7 @@ fn ParallelCountTask(comptime T: type) type {
 
             // Subtract matches in overlapping region to avoid double counting
             const overlap_count = if (overlap > 0 and mid > 0)
-                sequentialCount(T, haystack[mid .. @min(mid + overlap, haystack.len)], needle)
+                sequentialCount(T, haystack[mid..@min(mid + overlap, haystack.len)], needle)
             else
                 0;
 
@@ -151,10 +161,10 @@ pub fn parallelMap(
     input: []const T,
     output: []T,
     comptime mapFn: fn (T) T,
-) void {
-    std.debug.assert(input.len == output.len);
+) error{InvalidArgument}!void {
+    if (input.len != output.len) return error.InvalidArgument;
 
-    if (!build_options.enable_spice or input.len < 4096) {
+    if (!build_options.enable_spice or input.len < 10_485_760) {
         for (input, 0..) |v, i| output[i] = mapFn(v);
         return;
     }
@@ -209,7 +219,7 @@ pub fn parallelEditDistanceBatch(
     results: []usize,
     allocator: std.mem.Allocator,
 ) !void {
-    std.debug.assert(targets.len == results.len);
+    if (targets.len != results.len) return error.InvalidArgument;
 
     if (!build_options.enable_spice or targets.len < 8) {
         for (targets, 0..) |target, i| {
@@ -235,7 +245,17 @@ fn ParallelEditDistanceBatchTask() type {
 
             if (targets.len < 4) {
                 for (targets, 0..) |target, i| {
-                    results[i] = editDistance(source, target, std.heap.page_allocator) catch 0;
+                    // Use stack-based allocator to avoid mmap/munmap syscalls per call.
+                    // 8KB covers edit distance for strings up to ~511 chars;
+                    // falls back to page_allocator for longer strings.
+                    const needed = 2 * (@max(source.len, target.len) + 1) * @sizeOf(usize);
+                    if (needed <= 8192) {
+                        var buf: [8192]u8 = undefined;
+                        var fba = std.heap.FixedBufferAllocator.init(&buf);
+                        results[i] = editDistance(source, target, fba.allocator()) catch std.math.maxInt(usize);
+                    } else {
+                        results[i] = editDistance(source, target, std.heap.page_allocator) catch std.math.maxInt(usize);
+                    }
                 }
                 return;
             }
@@ -316,7 +336,7 @@ pub fn parallelFuzzySearch(
     results: []FuzzyResult,
     allocator: std.mem.Allocator,
 ) !void {
-    std.debug.assert(candidates.len == results.len);
+    if (candidates.len != results.len) return error.InvalidArgument;
 
     if (!build_options.enable_spice or candidates.len < 16) {
         for (candidates, 0..) |candidate, i| {
@@ -345,9 +365,18 @@ fn ParallelFuzzySearchTask() type {
 
             if (candidates.len < 8) {
                 for (candidates, 0..) |candidate, i| {
+                    // Use stack-based allocator to avoid mmap/munmap syscalls per call.
+                    // 8KB covers edit distance for strings up to ~511 chars;
+                    // falls back to page_allocator for longer strings.
+                    const needed = 2 * (@max(query.len, candidate.len) + 1) * @sizeOf(usize);
+                    const score = if (needed <= 8192) blk: {
+                        var buf: [8192]u8 = undefined;
+                        var fba = std.heap.FixedBufferAllocator.init(&buf);
+                        break :blk editDistance(query, candidate, fba.allocator()) catch std.math.maxInt(usize);
+                    } else editDistance(query, candidate, std.heap.page_allocator) catch std.math.maxInt(usize);
                     results[i] = .{
                         .index = i,
-                        .score = editDistance(query, candidate, std.heap.page_allocator) catch std.math.maxInt(usize),
+                        .score = score,
                     };
                 }
                 return;
@@ -402,13 +431,13 @@ test "parallel count large" {
     const filler = "haystack ";
     const repetitions = 1000;
 
-    var builder = std.ArrayList(u8).init(allocator);
-    defer builder.deinit();
+    var builder: std.ArrayList(u8) = .empty;
+    defer builder.deinit(allocator);
 
     var expected_count: usize = 0;
     for (0..repetitions) |_| {
-        try builder.appendSlice(filler);
-        try builder.appendSlice(pattern);
+        try builder.appendSlice(allocator, filler);
+        try builder.appendSlice(allocator, pattern);
         expected_count += 1;
     }
 
@@ -422,11 +451,71 @@ test "parallel map" {
     const input = "HELLO WORLD";
     var output: [11]u8 = undefined;
 
-    parallelMap(u8, input, &output, struct {
+    try parallelMap(u8, input, &output, struct {
         fn toLower(c: u8) u8 {
             return if (c >= 'A' and c <= 'Z') c + 32 else c;
         }
     }.toLower);
 
     try std.testing.expectEqualStrings("hello world", &output);
+}
+
+test "parallel map returns InvalidArgument on length mismatch" {
+    const input = "HELLO WORLD";
+    var output: [5]u8 = undefined;
+
+    const result = parallelMap(u8, input, &output, struct {
+        fn toLower(c: u8) u8 {
+            return if (c >= 'A' and c <= 'Z') c + 32 else c;
+        }
+    }.toLower);
+
+    try std.testing.expectError(error.InvalidArgument, result);
+}
+
+test "parallel edit distance batch returns InvalidArgument on length mismatch" {
+    const source = "hello";
+    const targets = [_][]const u8{ "world", "hallo" };
+    var results: [1]usize = undefined; // wrong length: 1 vs 2 targets
+
+    const result = parallelEditDistanceBatch(source, &targets, &results, std.testing.allocator);
+
+    try std.testing.expectError(error.InvalidArgument, result);
+}
+
+test "parallel fuzzy search returns InvalidArgument on length mismatch" {
+    const query = "hello";
+    const candidates = [_][]const u8{ "world", "hallo" };
+    var results: [1]FuzzyResult = undefined; // wrong length: 1 vs 2 candidates
+
+    const result = parallelFuzzySearch(query, &candidates, &results, std.testing.allocator);
+
+    try std.testing.expectError(error.InvalidArgument, result);
+}
+
+test "parallel edit distance batch sequential path" {
+    // Test the sequential fallback (< 8 targets) which uses FixedBufferAllocator
+    const source = "kitten";
+    const targets = [_][]const u8{ "sitting", "kitten", "mitten" };
+    var results: [3]usize = undefined;
+
+    try parallelEditDistanceBatch(source, &targets, &results, std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), results[0]); // kitten -> sitting = 3
+    try std.testing.expectEqual(@as(usize, 0), results[1]); // kitten -> kitten = 0
+    try std.testing.expectEqual(@as(usize, 1), results[2]); // kitten -> mitten = 1
+}
+
+test "parallel fuzzy search sequential path" {
+    // Test the sequential fallback (< 16 candidates) which uses FixedBufferAllocator
+    const query = "hello";
+    const candidates = [_][]const u8{ "hello", "hallo", "world" };
+    var results: [3]FuzzyResult = undefined;
+
+    try parallelFuzzySearch(query, &candidates, &results, std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), results[0].score); // exact match
+    try std.testing.expectEqual(@as(usize, 0), results[0].index);
+    try std.testing.expectEqual(@as(usize, 1), results[1].score); // 1 edit
+    try std.testing.expectEqual(@as(usize, 1), results[1].index);
 }

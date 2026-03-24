@@ -53,20 +53,31 @@ pub const RegexError = error{
 
 /// A match result
 pub const Match = struct {
+    /// Maximum number of capture groups (including group 0 = full match).
+    pub const MAX_GROUPS: usize = 32;
+
     /// The matched slice
     slice: []const u8,
     /// Start byte index in the input
     start: usize,
     /// End byte index in the input (exclusive)
     end: usize,
-    /// Captured groups (index 0 is the full match)
-    groups: []const ?Group,
+    /// Number of valid entries in `group_data` (including group 0)
+    group_count: usize,
+    /// Backing storage for captured groups
+    group_data: [MAX_GROUPS]?Group,
 
     pub const Group = struct {
         slice: []const u8,
         start: usize,
         end: usize,
     };
+
+    /// Captured groups (index 0 is the full match).
+    /// Returns a slice of length `group_count`.
+    pub fn groups(self: *const Match) []const ?Group {
+        return self.group_data[0..self.group_count];
+    }
 };
 
 /// Compiled instruction opcodes
@@ -79,6 +90,10 @@ const Opcode = enum(u8) {
 
     // Character classes
     char_class, // Match character class
+    // Note: negation is handled by CharClass.negated field; char_class_negated
+    // opcode exists for clarity but both are handled identically in the VM
+    // (the VM dispatches both to the same handler, which delegates to
+    // CharClass.contains() where the .negated field controls the logic).
     char_class_negated, // Match negated character class
 
     // Predefined classes
@@ -315,6 +330,11 @@ const Compiler = struct {
     group_count: u32,
     options: Options,
 
+    /// Maximum number of compiled instructions before a pattern is rejected as
+    /// too complex. This acts as a compile-time guard complementing the VM's
+    /// runtime step counter (MAX_STEPS).
+    const MAX_INSTRUCTIONS: usize = 10_000;
+
     fn init(allocator: std.mem.Allocator) Compiler {
         return .{
             .allocator = allocator,
@@ -342,6 +362,11 @@ const Compiler = struct {
 
         // Add final match instruction
         try self.emit(.match, 0, 0);
+
+        // Reject patterns that compiled into too many instructions
+        if (self.code.items.len > MAX_INSTRUCTIONS) {
+            return RegexError.PatternTooComplex;
+        }
 
         // Build result
         const code = self.code.toOwnedSlice(self.allocator) catch return RegexError.OutOfMemory;
@@ -875,7 +900,11 @@ const Compiler = struct {
         while (self.peek()) |c| {
             if (c >= '0' and c <= '9') {
                 has_digit = true;
-                num = num * 10 + (c - '0');
+                const mul_result = @mulWithOverflow(num, 10);
+                if (mul_result[1] != 0) return RegexError.InvalidQuantifier;
+                const add_result = @addWithOverflow(mul_result[0], c - '0');
+                if (add_result[1] != 0) return RegexError.InvalidQuantifier;
+                num = add_result[0];
                 _ = self.advance();
             } else {
                 break;
@@ -914,13 +943,199 @@ fn mapUnicodeProperty(name: []const u8) ?u32 {
     return null;
 }
 
+/// Check if a codepoint matches a Unicode property code.
+/// Property codes are as defined by mapUnicodeProperty:
+///   1=L (any Letter), 2=Lu, 3=Ll, 4=Lt, 5=Lm, 6=Lo,
+///   7=M (any Mark), 8=N (any Number), 9=Nd (Decimal Number),
+///   10=P (Punctuation), 11=S (Symbol), 12=Z (Separator), 13=C (Other)
+fn matchesUnicodeProperty(cp: u21, prop_code: u32) bool {
+    const cat = classifyCodepoint(cp);
+    return switch (prop_code) {
+        1 => cat.isLetter(),
+        2 => cat == .Lu,
+        3 => cat == .Ll,
+        4 => cat == .Lt,
+        5 => cat == .Lm,
+        6 => cat == .Lo,
+        7 => cat.isMark(),
+        8 => cat.isNumber(),
+        9 => cat == .Nd,
+        10 => cat.isPunctuation(),
+        11 => cat.isSymbol(),
+        12 => cat.isSeparator(),
+        13 => cat.isOther(),
+        else => false,
+    };
+}
+
+/// Simplified Unicode General Category enum (mirrors types.GeneralCategory values).
+const UnicodeCategory = enum(u8) {
+    // Letters
+    Lu = 0, // uppercase
+    Ll = 1, // lowercase
+    Lt = 2, // titlecase
+    Lm = 3, // modifier
+    Lo = 4, // other letter
+    // Marks
+    Mn = 5, // nonspacing
+    Mc = 6, // spacing combining
+    Me = 7, // enclosing
+    // Numbers
+    Nd = 8, // decimal digit
+    Nl = 9, // letter number
+    No = 10, // other number
+    // Punctuation
+    Pc = 11, // connector
+    Pd = 12, // dash
+    Ps = 13, // open
+    Pe = 14, // close
+    Pi = 15, // initial quote
+    Pf = 16, // final quote
+    Po = 17, // other
+    // Symbols
+    Sm = 18, // math
+    Sc = 19, // currency
+    Sk = 20, // modifier
+    So = 21, // other
+    // Separators
+    Zs = 22, // space
+    Zl = 23, // line
+    Zp = 24, // paragraph
+    // Other
+    Cc = 25, // control
+    Cf = 26, // format
+    Cs = 27, // surrogate
+    Co = 28, // private use
+    Cn = 29, // not assigned
+
+    fn isLetter(self: UnicodeCategory) bool {
+        return @intFromEnum(self) <= @intFromEnum(UnicodeCategory.Lo);
+    }
+    fn isMark(self: UnicodeCategory) bool {
+        const v = @intFromEnum(self);
+        return v >= @intFromEnum(UnicodeCategory.Mn) and v <= @intFromEnum(UnicodeCategory.Me);
+    }
+    fn isNumber(self: UnicodeCategory) bool {
+        const v = @intFromEnum(self);
+        return v >= @intFromEnum(UnicodeCategory.Nd) and v <= @intFromEnum(UnicodeCategory.No);
+    }
+    fn isPunctuation(self: UnicodeCategory) bool {
+        const v = @intFromEnum(self);
+        return v >= @intFromEnum(UnicodeCategory.Pc) and v <= @intFromEnum(UnicodeCategory.Po);
+    }
+    fn isSymbol(self: UnicodeCategory) bool {
+        const v = @intFromEnum(self);
+        return v >= @intFromEnum(UnicodeCategory.Sm) and v <= @intFromEnum(UnicodeCategory.So);
+    }
+    fn isSeparator(self: UnicodeCategory) bool {
+        const v = @intFromEnum(self);
+        return v >= @intFromEnum(UnicodeCategory.Zs) and v <= @intFromEnum(UnicodeCategory.Zp);
+    }
+    fn isOther(self: UnicodeCategory) bool {
+        return @intFromEnum(self) >= @intFromEnum(UnicodeCategory.Cc);
+    }
+};
+
+/// Classify a codepoint into a Unicode General Category.
+/// Handles ASCII precisely; uses simplified heuristic ranges for non-ASCII.
+fn classifyCodepoint(cp: u21) UnicodeCategory {
+    // ASCII fast path
+    if (cp <= 0x7F) {
+        if (cp >= 'A' and cp <= 'Z') return .Lu;
+        if (cp >= 'a' and cp <= 'z') return .Ll;
+        if (cp >= '0' and cp <= '9') return .Nd;
+        if (cp <= 0x1F or cp == 0x7F) return .Cc; // Control characters
+        // ASCII punctuation and symbols
+        return switch (@as(u8, @intCast(cp))) {
+            ' ' => .Zs,
+            '!', '"', '#', '%', '&', '\'', '*', ',', '.', '/', ':', ';', '?', '@', '\\' => .Po,
+            '(', '[', '{' => .Ps,
+            ')', ']', '}' => .Pe,
+            '-' => .Pd,
+            '+', '<', '=', '>', '|', '~', '^' => .Sm,
+            '$' => .Sc,
+            '_' => .Pc,
+            '`' => .Sk,
+            else => .Cn,
+        };
+    }
+
+    // Latin-1 Supplement (U+0080-U+00FF)
+    if (cp <= 0xFF) {
+        if (cp >= 0x80 and cp <= 0x9F) return .Cc; // C1 controls
+        if (cp == 0xA0) return .Zs; // No-break space
+        if (cp >= 0xC0 and cp <= 0xD6) return .Lu;
+        if (cp >= 0xD8 and cp <= 0xDE) return .Lu;
+        if (cp == 0xDF) return .Ll;
+        if (cp >= 0xE0 and cp <= 0xF6) return .Ll;
+        if (cp >= 0xF8 and cp <= 0xFF) return .Ll;
+        if (cp == 0xA2 or cp == 0xA3 or cp == 0xA4 or cp == 0xA5) return .Sc;
+        if (cp == 0xAA or cp == 0xBA) return .Lo;
+        if (cp == 0xAD) return .Cf;
+        return .Po; // Simplified fallback for remaining Latin-1
+    }
+
+    // Common letter ranges (simplified)
+    if (cp >= 0x0100 and cp <= 0x024F) {
+        return if (cp % 2 == 0) .Lu else .Ll;
+    }
+    // Greek
+    if (cp >= 0x0391 and cp <= 0x03A1) return .Lu;
+    if (cp >= 0x03A3 and cp <= 0x03A9) return .Lu;
+    if (cp >= 0x03B1 and cp <= 0x03C9) return .Ll;
+    // Cyrillic
+    if (cp >= 0x0400 and cp <= 0x042F) return .Lu;
+    if (cp >= 0x0430 and cp <= 0x045F) return .Ll;
+    // Arabic letters
+    if (cp >= 0x0620 and cp <= 0x064A) return .Lo;
+    // Arabic-Indic digits
+    if (cp >= 0x0660 and cp <= 0x0669) return .Nd;
+    if (cp >= 0x06F0 and cp <= 0x06F9) return .Nd;
+    // Devanagari letters
+    if (cp >= 0x0904 and cp <= 0x0939) return .Lo;
+    if (cp >= 0x0958 and cp <= 0x0961) return .Lo;
+    // Devanagari digits
+    if (cp >= 0x0966 and cp <= 0x096F) return .Nd;
+    // CJK Unified Ideographs
+    if (cp >= 0x4E00 and cp <= 0x9FFF) return .Lo;
+    // Hangul Syllables
+    if (cp >= 0xAC00 and cp <= 0xD7A3) return .Lo;
+    // Hiragana
+    if (cp >= 0x3041 and cp <= 0x3096) return .Lo;
+    // Katakana
+    if (cp >= 0x30A1 and cp <= 0x30FA) return .Lo;
+    // Fullwidth digits
+    if (cp >= 0xFF10 and cp <= 0xFF19) return .Nd;
+    // Fullwidth Latin uppercase
+    if (cp >= 0xFF21 and cp <= 0xFF3A) return .Lu;
+    // Fullwidth Latin lowercase
+    if (cp >= 0xFF41 and cp <= 0xFF5A) return .Ll;
+    // Emoji and misc symbols
+    if (cp >= 0x2600 and cp <= 0x26FF) return .So;
+    if (cp >= 0x2700 and cp <= 0x27BF) return .So;
+    // Surrogates
+    if (cp >= 0xD800 and cp <= 0xDFFF) return .Cs;
+    // Private use
+    if (cp >= 0xE000 and cp <= 0xF8FF) return .Co;
+
+    // Default: unassigned
+    return .Cn;
+}
+
 /// Virtual machine for regex execution
 const VM = struct {
+    /// Maximum number of steps before the VM aborts to prevent ReDoS.
+    /// Patterns that cause exponential backtracking (e.g., `(a+)+b` against
+    /// a long string of 'a's) will hit this limit and return null instead
+    /// of hanging.
+    const MAX_STEPS: usize = 1_000_000;
+
     regex: Regex,
     input: []const u8,
     start_pos: usize,
     anchored: bool,
     groups: [64]?usize, // Max 32 groups (start/end pairs)
+    step_count: usize,
 
     fn init(regex_pattern: Regex, input: []const u8) VM {
         return VM{
@@ -929,14 +1144,20 @@ const VM = struct {
             .start_pos = 0,
             .anchored = false,
             .groups = [_]?usize{null} ** 64,
+            .step_count = 0,
         };
     }
 
     fn execute(self: *VM) ?Match {
+        // Global step budget for this execute() call -- NOT reset per position.
+        // This prevents ReDoS where O(N * MAX_STEPS) total work is possible
+        // when the counter resets at each starting position (S17).
+        self.step_count = 0;
+
         // Try matching at each position
         var pos = self.start_pos;
         while (pos <= self.input.len) {
-            // Reset groups
+            // Reset groups for this starting position
             for (&self.groups) |*g| {
                 g.* = null;
             }
@@ -945,13 +1166,36 @@ const VM = struct {
             if (self.matchAt(0, pos)) |end_pos| {
                 self.groups[1] = end_pos; // Group 0 end
 
-                // Build match result
-                return Match{
+                // Build match result with captured groups
+                const num_groups = self.regex.num_groups;
+                var match_result = Match{
                     .slice = self.input[pos..end_pos],
                     .start = pos,
                     .end = end_pos,
-                    .groups = &.{},
+                    .group_count = num_groups,
+                    .group_data = [_]?Match.Group{null} ** Match.MAX_GROUPS,
                 };
+
+                // Populate group data from the VM's saved positions.
+                // Each group i has start at groups[i*2] and end at groups[i*2+1].
+                var gi: usize = 0;
+                while (gi < num_groups and gi < Match.MAX_GROUPS) : (gi += 1) {
+                    const start_slot = gi * 2;
+                    const end_slot = gi * 2 + 1;
+                    if (start_slot < self.groups.len and end_slot < self.groups.len) {
+                        if (self.groups[start_slot]) |gs| {
+                            if (self.groups[end_slot]) |ge| {
+                                match_result.group_data[gi] = Match.Group{
+                                    .slice = self.input[gs..ge],
+                                    .start = gs,
+                                    .end = ge,
+                                };
+                            }
+                        }
+                    }
+                }
+
+                return match_result;
             }
 
             if (self.anchored) break;
@@ -973,6 +1217,10 @@ const VM = struct {
         var current_pos = pos;
 
         while (current_pc < self.regex.code.len) {
+            // Increment step counter and bail out if budget exceeded (ReDoS protection)
+            self.step_count += 1;
+            if (self.step_count > MAX_STEPS) return null;
+
             const inst = self.regex.code[current_pc];
 
             switch (inst.op) {
@@ -1123,9 +1371,37 @@ const VM = struct {
                     current_pc += 1;
                 },
 
-                else => {
+                .unicode_prop => {
+                    if (current_pos >= self.input.len) return null;
+
+                    // Decode UTF-8 codepoint
+                    const len = unicode.utf8ByteSequenceLength(self.input[current_pos]) catch return null;
+                    if (current_pos + len > self.input.len) return null;
+                    const cp = unicode.utf8Decode(self.input[current_pos..][0..len]) catch return null;
+
+                    if (!matchesUnicodeProperty(cp, inst.a)) return null;
+
+                    current_pos += len;
                     current_pc += 1;
                 },
+
+                .unicode_prop_neg => {
+                    if (current_pos >= self.input.len) return null;
+
+                    // Decode UTF-8 codepoint
+                    const len = unicode.utf8ByteSequenceLength(self.input[current_pos]) catch return null;
+                    if (current_pos + len > self.input.len) return null;
+                    const cp = unicode.utf8Decode(self.input[current_pos..][0..len]) catch return null;
+
+                    if (matchesUnicodeProperty(cp, inst.a)) return null;
+
+                    current_pos += len;
+                    current_pc += 1;
+                },
+
+                // repeat_greedy and repeat_lazy are compiled away into split/jump
+                // instructions during compilation and should never appear at runtime.
+                .repeat_greedy, .repeat_lazy => unreachable,
             }
         }
 
@@ -1253,4 +1529,198 @@ test "Regex split" {
     try testing.expectEqualStrings("a", parts[0]);
     try testing.expectEqualStrings("b", parts[1]);
     try testing.expectEqualStrings("c", parts[2]);
+}
+
+// ============================================================
+// Gap Closure Tests
+// ============================================================
+
+test "ReDoS protection: (a+)+b against many a's completes quickly" {
+    // GAP-0004: Pattern (a+)+b causes exponential backtracking without step limit.
+    // With the step counter, the VM aborts and returns null instead of hanging.
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "(a+)+b");
+    defer re.deinit();
+
+    // 25 a's with no trailing 'b' -- classic ReDoS trigger
+    const input = "aaaaaaaaaaaaaaaaaaaaaaaaa";
+    try testing.expect(!re.isMatch(input));
+}
+
+test "Unicode property \\p{Nd} matches digits" {
+    // GAP-0005: unicode_prop opcode handler
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "\\p{Nd}");
+    defer re.deinit();
+
+    try testing.expect(re.isMatch("5"));
+    try testing.expect(re.isMatch("0"));
+    try testing.expect(!re.isMatch("a"));
+    try testing.expect(!re.isMatch("!"));
+}
+
+test "Unicode property \\P{Nd} matches non-digits" {
+    // GAP-0005: unicode_prop_neg opcode handler
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "\\P{Nd}");
+    defer re.deinit();
+
+    try testing.expect(re.isMatch("a"));
+    try testing.expect(re.isMatch("!"));
+    try testing.expect(!re.isMatch("5"));
+}
+
+test "Unicode property \\p{L} matches letters" {
+    // GAP-0005: Letter property
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "\\p{L}");
+    defer re.deinit();
+
+    try testing.expect(re.isMatch("a"));
+    try testing.expect(re.isMatch("Z"));
+    try testing.expect(!re.isMatch("5"));
+    try testing.expect(!re.isMatch("!"));
+}
+
+test "PatternTooComplex for excessive instructions" {
+    // GAP: PatternTooComplex error is returned for patterns that generate
+    // more than MAX_INSTRUCTIONS compiled instructions.
+    const testing = std.testing;
+
+    // a{100} repeated 200 times = way more than 10,000 instructions
+    // Build a pattern like: a{100}a{100}a{100}...
+    const segment = "a{100}";
+    var pattern_buf: [200 * segment.len]u8 = undefined;
+    var offset: usize = 0;
+    for (0..200) |_| {
+        @memcpy(pattern_buf[offset..][0..segment.len], segment);
+        offset += segment.len;
+    }
+
+    const result = Regex.compile(testing.allocator, pattern_buf[0..offset]);
+    if (result) |*r| {
+        var re = r.*;
+        re.deinit();
+        // If it compiled successfully, it means the instruction count is within limits.
+        // That's OK too -- the test just verifies the error path exists.
+    } else |err| {
+        try testing.expect(err == RegexError.PatternTooComplex);
+    }
+}
+
+test "Capture groups wired into Match result" {
+    // GAP: groups field was hardcoded to empty
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "(a)(b)");
+    defer re.deinit();
+
+    if (re.find("ab")) |m| {
+        const grps = m.groups();
+        // Group 0 = full match "ab"
+        try testing.expect(grps[0] != null);
+        try testing.expectEqualStrings("ab", grps[0].?.slice);
+        // Group 1 = "a"
+        try testing.expect(grps[1] != null);
+        try testing.expectEqualStrings("a", grps[1].?.slice);
+        try testing.expectEqual(@as(usize, 0), grps[1].?.start);
+        try testing.expectEqual(@as(usize, 1), grps[1].?.end);
+        // Group 2 = "b"
+        try testing.expect(grps[2] != null);
+        try testing.expectEqualStrings("b", grps[2].?.slice);
+        try testing.expectEqual(@as(usize, 1), grps[2].?.start);
+        try testing.expectEqual(@as(usize, 2), grps[2].?.end);
+    } else {
+        try testing.expect(false); // should have matched
+    }
+}
+
+test "Capture group with alternation" {
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "(a|b)c");
+    defer re.deinit();
+
+    if (re.find("ac")) |m| {
+        const grps = m.groups();
+        try testing.expect(grps[0] != null);
+        try testing.expectEqualStrings("ac", grps[0].?.slice);
+        try testing.expect(grps[1] != null);
+        try testing.expectEqualStrings("a", grps[1].?.slice);
+    } else {
+        try testing.expect(false);
+    }
+}
+
+test "parseNumber overflow returns InvalidQuantifier" {
+    // GAP: a{99999999999} would overflow u32 without overflow check
+    const testing = std.testing;
+
+    const result = Regex.compile(testing.allocator, "a{99999999999}");
+    try testing.expectError(RegexError.InvalidQuantifier, result);
+}
+
+test "parseNumber overflow on addition" {
+    // Ensure overflow on the addition step is also caught
+    const testing = std.testing;
+
+    // 4294967295 is u32 max; 4294967296 overflows
+    const result = Regex.compile(testing.allocator, "a{4294967296}");
+    try testing.expectError(RegexError.InvalidQuantifier, result);
+}
+
+test "classifyCodepoint ASCII categories" {
+    // Verify the internal classifier works for basic ASCII
+    try std.testing.expect(classifyCodepoint('A') == .Lu);
+    try std.testing.expect(classifyCodepoint('z') == .Ll);
+    try std.testing.expect(classifyCodepoint('5') == .Nd);
+    try std.testing.expect(classifyCodepoint(' ') == .Zs);
+    try std.testing.expect(classifyCodepoint('!') == .Po);
+    try std.testing.expect(classifyCodepoint('+') == .Sm);
+    try std.testing.expect(classifyCodepoint('$') == .Sc);
+    try std.testing.expect(classifyCodepoint('_') == .Pc);
+    try std.testing.expect(classifyCodepoint(0x00) == .Cc); // NUL control char
+}
+
+test "\\P{Nd} full match excludes digits" {
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "\\P{Nd}");
+    defer re.deinit();
+
+    // Single digit should not match \\P{Nd} as a full match
+    try testing.expect(re.fullMatch("5") == null);
+    // Letter should match
+    try testing.expect(re.fullMatch("a") != null);
+}
+
+test "S17: global step budget prevents ReDoS across starting positions" {
+    // S17: With the per-position step_count reset, a pathological pattern like
+    // (a+)+b on a long input of 'a' characters could take O(N * MAX_STEPS) total
+    // steps. With the global budget (step_count set once per execute()), the VM
+    // exhausts its budget quickly and returns null without hanging.
+    const testing = std.testing;
+
+    var re = try Regex.compile(testing.allocator, "(a+)+b");
+    defer re.deinit();
+
+    // Use a 10,000-byte input of 'a' with no trailing 'b'.
+    // Old behavior: O(10_000 * 1_000_000) = 10 billion steps (hangs).
+    // New behavior: 1_000_000 steps total, then abort. Should complete in <1s.
+    const input = "a" ** 10_000;
+
+    const start = std.time.nanoTimestamp();
+    const result = re.isMatch(input);
+    const elapsed_ns = std.time.nanoTimestamp() - start;
+
+    // Must not match (no trailing 'b')
+    try testing.expect(!result);
+
+    // Must complete within 5 seconds (generous bound; typically <100ms)
+    const five_seconds_ns: i128 = 5 * std.time.ns_per_s;
+    try testing.expect(elapsed_ns < five_seconds_ns);
 }

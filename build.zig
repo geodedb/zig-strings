@@ -132,6 +132,14 @@ pub fn build(b: *std.Build) void {
         .{ .name = "types", .module = types_mod },
     });
 
+    const ucd_nfc_qc_mod = addLibModule(b, target, optimize, "ucd_nfc_qc", "src/unicode/data/nfc_qc.zig", &.{
+        .{ .name = "types", .module = types_mod },
+    });
+
+    const ucd_nfkc_qc_mod = addLibModule(b, target, optimize, "ucd_nfkc_qc", "src/unicode/data/nfkc_qc.zig", &.{
+        .{ .name = "types", .module = types_mod },
+    });
+
     const ucd_scripts_mod = addLibModule(b, target, optimize, "ucd_scripts", "src/unicode/data/scripts.zig", &.{
         .{ .name = "types", .module = types_mod },
     });
@@ -148,6 +156,15 @@ pub fn build(b: *std.Build) void {
         .{ .name = "types", .module = types_mod },
     });
 
+    const ucd_general_category_mod = addLibModule(b, target, optimize, "ucd_general_category", "src/unicode/data/general_category.zig", &.{
+        .{ .name = "types", .module = types_mod },
+    });
+
+    const ucd_grapheme_break_mod = addLibModule(b, target, optimize, "ucd_grapheme_break", "src/unicode/data/grapheme_break.zig", &.{});
+
+    // Wire generated UCD General Category table into categories module
+    categories_mod.addImport("ucd_general_category", ucd_general_category_mod);
+
     const normalization_mod = addLibModule(b, target, optimize, "normalization", "src/unicode/normalization.zig", &.{
         .{ .name = "types", .module = types_mod },
         .{ .name = "codepoint", .module = codepoint_mod },
@@ -155,6 +172,8 @@ pub fn build(b: *std.Build) void {
         .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
         .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
         .{ .name = "ucd_composition", .module = ucd_comp_mod },
+        .{ .name = "ucd_nfc_qc", .module = ucd_nfc_qc_mod },
+        .{ .name = "ucd_nfkc_qc", .module = ucd_nfkc_qc_mod },
     });
 
     const grapheme_mod = addLibModule(b, target, optimize, "grapheme", "src/unicode/grapheme.zig", &.{
@@ -162,6 +181,8 @@ pub fn build(b: *std.Build) void {
         .{ .name = "codepoint", .module = codepoint_mod },
         .{ .name = "categories", .module = categories_mod },
     });
+    // Wire generated UCD Grapheme Break table into grapheme module
+    grapheme_mod.addImport("ucd_grapheme_break", ucd_grapheme_break_mod);
 
     const word_mod = addLibModule(b, target, optimize, "word", "src/unicode/word.zig", &.{
         .{ .name = "types", .module = types_mod },
@@ -630,6 +651,7 @@ pub fn build(b: *std.Build) void {
     test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/categories.zig", &.{
         .{ .name = "types", .module = types_mod },
         .{ .name = "codepoint", .module = codepoint_mod },
+        .{ .name = "ucd_general_category", .module = ucd_general_category_mod },
     })).step);
     test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/normalization.zig", &.{
         .{ .name = "types", .module = types_mod },
@@ -638,12 +660,15 @@ pub fn build(b: *std.Build) void {
         .{ .name = "ucd_ccc", .module = ucd_ccc_mod },
         .{ .name = "ucd_decomposition", .module = ucd_decomp_mod },
         .{ .name = "ucd_composition", .module = ucd_comp_mod },
+        .{ .name = "ucd_nfc_qc", .module = ucd_nfc_qc_mod },
+        .{ .name = "ucd_nfkc_qc", .module = ucd_nfkc_qc_mod },
         .{ .name = "simd", .module = simd_mod },
     })).step);
     test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/grapheme.zig", &.{
         .{ .name = "types", .module = types_mod },
         .{ .name = "codepoint", .module = codepoint_mod },
         .{ .name = "categories", .module = categories_mod },
+        .{ .name = "ucd_grapheme_break", .module = ucd_grapheme_break_mod },
     })).step);
     test_unicode_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/unicode/case.zig", &.{
         .{ .name = "types", .module = types_mod },

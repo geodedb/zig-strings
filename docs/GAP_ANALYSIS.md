@@ -17,18 +17,14 @@
 - **Issue:** [#22](https://gitlab.com/devnw/zig/strings/-/issues/22)
 - **Category:** Bug
 - **Severity:** Critical
-- **Requirement source:** UAX #15 Section 9: Quick_Check property lookups (NFC_QC, NFD_QC, NFKC_QC, NFKD_QC)
-- **Current state (evidence):**
-  - `src/unicode/normalization.zig:62-68` -- The NFC/NFKC branch of the `switch (form)` statement is an empty block with only a comment: "the partial check only validates CCC ordering."
-  - NFD/NFKD branches (lines 69-90) correctly check decomposition tables and Hangul syllables.
-  - NFD/NFKD fix verified in Wave 1; NFC/NFKC remains unimplemented. Requires UCD property table generation.
-- **Why this is a gap:** `isNormalized("caf\xC3\xA9", .nfc)` returns `true` even though the precomposed character has no special NFC validation. Any composed string passes trivially. The function remains broken for NFC/NFKC.
-- **Impact/Risk:** Data corruption in any pipeline that uses `isNormalized()` as a guard before processing. Unicode conformance failure.
-- **Recommended fix:** Implement proper Quick_Check property lookups per UAX #15 Section 9. Requires generating UCD property tables (NFC_QC, NFKC_QC).
-- **Acceptance criteria:**
-  - `isNormalized("\xC3\xA9", .nfd)` returns `false`
-  - `isNormalized("e\xCC\x81", .nfc)` returns `false`
-  - Tests cover all four forms with known normalized/unnormalized inputs
+- **Status:** RESOLVED (2026-03-24)
+- **Resolution:** Implemented NFC_QC and NFKC_QC Quick_Check property lookups per UAX #15 Section 9.
+  - Extended `tools/generate_ucd.py` to download and parse `DerivedNormalizationProps.txt`
+  - Generated two-level trie tables: `src/unicode/data/nfc_qc.zig` (38KB) and `src/unicode/data/nfkc_qc.zig` (76KB)
+  - Wired modules into `build.zig` (`ucd_nfc_qc_mod`, `ucd_nfkc_qc_mod`)
+  - Replaced empty NFC/NFKC branch in `isNormalized()` with Quick_Check lookups
+  - Added/updated 4 tests covering all acceptance criteria
+  - All 541 tests pass with zero regressions
 
 ### A1: Error type duplication across modules (Partial)
 - **Issue:** [#39](https://gitlab.com/devnw/zig/strings/-/issues/39)

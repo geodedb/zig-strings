@@ -11,31 +11,35 @@ const std = @import("std");
 const types = @import("types");
 const codepoint_mod = @import("codepoint");
 const categories = @import("categories");
+const ucd_grapheme_break = @import("ucd_grapheme_break");
 
 pub const Codepoint = types.Codepoint;
 
-/// Grapheme cluster break property
-pub const GraphemeBreak = enum {
-    Other,
-    CR,
-    LF,
-    Control,
-    Extend,
-    ZWJ,
-    Regional_Indicator,
-    Prepend,
-    SpacingMark,
-    L, // Hangul L
-    V, // Hangul V
-    T, // Hangul T
-    LV, // Hangul LV
-    LVT, // Hangul LVT
-    Extended_Pictographic,
+/// Grapheme cluster break property.
+/// Explicit u8 backing values match the generated trie table exactly.
+pub const GraphemeBreak = enum(u8) {
+    Other = 0,
+    CR = 1,
+    LF = 2,
+    Control = 3,
+    Extend = 4,
+    ZWJ = 5,
+    Regional_Indicator = 6,
+    Prepend = 7,
+    SpacingMark = 8,
+    L = 9, // Hangul L
+    V = 10, // Hangul V
+    T = 11, // Hangul T
+    LV = 12, // Hangul LV
+    LVT = 13, // Hangul LVT
+    Extended_Pictographic = 14,
 };
 
-/// Gets the grapheme break property for a code point
+/// Gets the grapheme break property for a code point.
+/// Uses the ASCII fast-path for cp < 0x80, then falls through to a
+/// generated two-level trie for O(1) lookup across all of Unicode.
 pub fn getGraphemeBreak(cp: Codepoint) GraphemeBreak {
-    // ASCII fast-path: avoid the 30+ comparisons below for codepoints < 0x80.
+    // ASCII fast-path: avoid the table lookup for codepoints < 0x80.
     // CR, LF, and C0/DEL control characters are handled explicitly; all
     // remaining ASCII codepoints are .Other by definition (UAX #29).
     if (cp < 0x80) {
@@ -45,122 +49,10 @@ pub fn getGraphemeBreak(cp: Codepoint) GraphemeBreak {
         return .Other;
     }
 
-    // Control (Cc, Cf minus certain characters)
-    if (cp >= 0x007F and cp <= 0x009F) return .Control;
-    if (cp == 0x00AD) return .Control; // Soft hyphen
-
-    // ZWJ
-    if (cp == 0x200D) return .ZWJ;
-
-    // Regional Indicator
-    if (cp >= 0x1F1E6 and cp <= 0x1F1FF) return .Regional_Indicator;
-
-    // SpacingMark - Indic vowel signs and similar (check before general marks)
-    if (isIndicSpacingMark(cp)) return .SpacingMark;
-
-    // Extend (combining marks and similar)
-    if (categories.isMark(cp)) return .Extend;
-    if (cp >= 0x1F3FB and cp <= 0x1F3FF) return .Extend; // Emoji skin tones
-    if (cp == 0x200C or cp == 0x200D) return .Extend; // ZWNJ, ZWJ
-    if (cp >= 0xFE00 and cp <= 0xFE0F) return .Extend; // Variation selectors
-    if (cp >= 0xE0100 and cp <= 0xE01EF) return .Extend; // Variation selectors supplement
-
-    // Hangul syllable types
-    if (cp >= 0x1100 and cp <= 0x115F) return .L;
-    if (cp >= 0xA960 and cp <= 0xA97C) return .L;
-    if (cp >= 0x1160 and cp <= 0x11A7) return .V;
-    if (cp >= 0xD7B0 and cp <= 0xD7C6) return .V;
-    if (cp >= 0x11A8 and cp <= 0x11FF) return .T;
-    if (cp >= 0xD7CB and cp <= 0xD7FB) return .T;
-
-    // Hangul syllables
-    if (cp >= 0xAC00 and cp <= 0xD7A3) {
-        const offset = cp - 0xAC00;
-        if (offset % 28 == 0) return .LV;
-        return .LVT;
-    }
-
-    // Extended Pictographic (simplified - common emoji)
-    if (isExtendedPictographic(cp)) return .Extended_Pictographic;
-
-    return .Other;
-}
-
-/// Check if a code point is an Indic SpacingMark (dependent vowel that takes space)
-fn isIndicSpacingMark(cp: Codepoint) bool {
-    // Devanagari dependent vowels (spacing marks)
-    if ((cp >= 0x093E and cp <= 0x0940) or // ा ि ी
-        (cp >= 0x0949 and cp <= 0x094C) or // ॉ ॊ ो ौ
-        cp == 0x094E or cp == 0x094F or cp == 0x0982 or cp == 0x0983) return true;
-
-    // Bengali dependent vowels
-    if ((cp >= 0x09BE and cp <= 0x09C0) or // া ি ী
-        (cp >= 0x09C7 and cp <= 0x09C8) or // ে ৈ
-        (cp >= 0x09CB and cp <= 0x09CC) or // ো ৌ
-        cp == 0x09D7) return true;
-
-    // Gurmukhi
-    if ((cp >= 0x0A3E and cp <= 0x0A40) or
-        cp == 0x0A03) return true;
-
-    // Gujarati
-    if ((cp >= 0x0ABE and cp <= 0x0AC0) or
-        cp == 0x0AC9 or (cp >= 0x0ACB and cp <= 0x0ACC)) return true;
-
-    // Oriya
-    if ((cp >= 0x0B3E and cp <= 0x0B40) or
-        (cp >= 0x0B47 and cp <= 0x0B48) or
-        (cp >= 0x0B4B and cp <= 0x0B4C) or
-        cp == 0x0B57) return true;
-
-    // Tamil dependent vowels
-    if ((cp >= 0x0BBE and cp <= 0x0BBF) or // ா ி
-        (cp >= 0x0BC1 and cp <= 0x0BC2) or // ு ூ
-        (cp >= 0x0BC6 and cp <= 0x0BC8) or // ெ ே ை
-        (cp >= 0x0BCA and cp <= 0x0BCC) or // ொ ோ ௌ
-        cp == 0x0BD7) return true;
-
-    // Telugu dependent vowels
-    if ((cp >= 0x0C01 and cp <= 0x0C03) or // candrabindu, anusvara, visarga
-        (cp >= 0x0C41 and cp <= 0x0C44) or // vowel signs
-        (cp >= 0x0C46 and cp <= 0x0C48) or
-        (cp >= 0x0C4A and cp <= 0x0C4C)) return true;
-
-    // Kannada
-    if ((cp >= 0x0CBE and cp <= 0x0CC4) or
-        (cp >= 0x0CC6 and cp <= 0x0CC8) or
-        (cp >= 0x0CCA and cp <= 0x0CCC) or
-        cp == 0x0CD5 or cp == 0x0CD6) return true;
-
-    // Malayalam
-    if ((cp >= 0x0D02 and cp <= 0x0D03) or
-        (cp >= 0x0D3E and cp <= 0x0D40) or
-        (cp >= 0x0D46 and cp <= 0x0D48) or
-        (cp >= 0x0D4A and cp <= 0x0D4C) or
-        cp == 0x0D57) return true;
-
-    // Sinhala
-    if ((cp >= 0x0DCF and cp <= 0x0DD1) or
-        (cp >= 0x0DD8 and cp <= 0x0DDF) or
-        (cp >= 0x0DF2 and cp <= 0x0DF3)) return true;
-
-    // Thai
-    if (cp == 0x0E30 or (cp >= 0x0E32 and cp <= 0x0E33) or
-        cp == 0x0E45) return true;
-
-    // Lao
-    if (cp == 0x0EB0 or (cp >= 0x0EB2 and cp <= 0x0EB3)) return true;
-
-    // Tibetan
-    if (cp >= 0x0F7F and cp <= 0x0F80) return true;
-
-    // Myanmar
-    if ((cp >= 0x102B and cp <= 0x102C) or
-        (cp >= 0x1031 and cp <= 0x1031) or
-        (cp >= 0x1038 and cp <= 0x1038) or
-        (cp >= 0x103B and cp <= 0x103C)) return true;
-
-    return false;
+    // Full Unicode lookup via generated two-stage trie table.
+    // The table's enum values match our GraphemeBreak enum exactly.
+    const tbl_val = ucd_grapheme_break.getGraphemeBreakProperty(cp);
+    return @enumFromInt(@intFromEnum(tbl_val));
 }
 
 /// Check if a code point is an Indic virama (halant)
@@ -222,25 +114,6 @@ pub fn isIndicConsonant(cp: Codepoint) bool {
     if (cp >= 0x0D9A and cp <= 0x0DC6) return true;
 
     return false;
-}
-
-/// Checks if a code point is Extended_Pictographic
-fn isExtendedPictographic(cp: Codepoint) bool {
-    // Simplified check for common emoji ranges
-    return (cp >= 0x1F600 and cp <= 0x1F64F) or // Emoticons
-        (cp >= 0x1F300 and cp <= 0x1F5FF) or // Misc Symbols and Pictographs
-        (cp >= 0x1F680 and cp <= 0x1F6FF) or // Transport and Map
-        (cp >= 0x1F700 and cp <= 0x1F77F) or // Alchemical Symbols
-        (cp >= 0x1F780 and cp <= 0x1F7FF) or // Geometric Shapes Extended
-        (cp >= 0x1F800 and cp <= 0x1F8FF) or // Supplemental Arrows-C
-        (cp >= 0x1F900 and cp <= 0x1F9FF) or // Supplemental Symbols and Pictographs
-        (cp >= 0x1FA00 and cp <= 0x1FA6F) or // Chess Symbols
-        (cp >= 0x1FA70 and cp <= 0x1FAFF) or // Symbols and Pictographs Extended-A
-        (cp >= 0x2600 and cp <= 0x26FF) or // Misc symbols
-        (cp >= 0x2700 and cp <= 0x27BF) or // Dingbats
-        cp == 0x00A9 or cp == 0x00AE or // Copyright, Registered
-        cp == 0x203C or cp == 0x2049 or // Double exclamation, exclamation question
-        (cp >= 0x2300 and cp <= 0x23FF); // Misc technical
 }
 
 /// Determines if there should be a grapheme break between two code points
@@ -557,4 +430,42 @@ test "Indic consonant detection" {
     try testing.expect(isIndicConsonant(0x0B95)); // Tamil ka
     try testing.expect(isIndicConsonant(0x0C15)); // Telugu ka
     try testing.expect(!isIndicConsonant(0x0041)); // 'A' is not an Indic consonant
+}
+
+test "trie-based getGraphemeBreak covers full Unicode range" {
+    const testing = std.testing;
+
+    // ASCII fast-path
+    try testing.expectEqual(GraphemeBreak.CR, getGraphemeBreak(0x0D));
+    try testing.expectEqual(GraphemeBreak.LF, getGraphemeBreak(0x0A));
+    try testing.expectEqual(GraphemeBreak.Other, getGraphemeBreak('A'));
+
+    // Non-ASCII: ZWJ
+    try testing.expectEqual(GraphemeBreak.ZWJ, getGraphemeBreak(0x200D));
+
+    // Regional Indicator
+    try testing.expectEqual(GraphemeBreak.Regional_Indicator, getGraphemeBreak(0x1F1E6));
+
+    // Hangul Jamo
+    try testing.expectEqual(GraphemeBreak.L, getGraphemeBreak(0x1100));
+    try testing.expectEqual(GraphemeBreak.V, getGraphemeBreak(0x1160));
+    try testing.expectEqual(GraphemeBreak.T, getGraphemeBreak(0x11A8));
+
+    // Hangul syllables (LV and LVT via the trie)
+    try testing.expectEqual(GraphemeBreak.LV, getGraphemeBreak(0xAC00)); // 가 (LV syllable)
+    try testing.expectEqual(GraphemeBreak.LVT, getGraphemeBreak(0xAC01)); // 각 (LVT syllable)
+
+    // Extend (combining marks)
+    try testing.expectEqual(GraphemeBreak.Extend, getGraphemeBreak(0x0300)); // Combining grave accent
+    try testing.expectEqual(GraphemeBreak.Extend, getGraphemeBreak(0x0301)); // Combining acute accent
+
+    // Control
+    try testing.expectEqual(GraphemeBreak.Control, getGraphemeBreak(0x0000));
+    try testing.expectEqual(GraphemeBreak.Control, getGraphemeBreak(0x007F)); // DEL
+
+    // SpacingMark
+    try testing.expectEqual(GraphemeBreak.SpacingMark, getGraphemeBreak(0x0903)); // Devanagari visarga
+
+    // Extended Pictographic (emoji)
+    try testing.expectEqual(GraphemeBreak.Extended_Pictographic, getGraphemeBreak(0x1F600)); // Grinning face
 }

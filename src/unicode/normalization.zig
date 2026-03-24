@@ -21,6 +21,8 @@ const simd = @import("simd");
 const ucd_ccc = @import("ucd_ccc");
 const ucd_decomp = @import("ucd_decomposition");
 const ucd_comp = @import("ucd_composition");
+const ucd_nfc_qc = @import("ucd_nfc_qc");
+const ucd_nfkc_qc = @import("ucd_nfkc_qc");
 
 pub const Codepoint = types.Codepoint;
 pub const NormalizationForm = types.NormalizationForm;
@@ -42,11 +44,12 @@ pub fn isStarter(cp: Codepoint) bool {
 
 /// Checks if a string is in a given normalization form.
 ///
-/// WARNING: This function currently only performs a partial check. It verifies
-/// canonical ordering (CCC monotonicity) and performs basic form-specific checks
-/// using decomposition and composition tables. It does NOT use Unicode Quick_Check
-/// properties (NFC_QC, NFD_QC, etc.) and may return false positives. For reliable
-/// normalization checking, use normalize() and compare the result with the input.
+/// For NFC and NFKC, uses Unicode Quick_Check properties (NFC_QC and NFKC_QC)
+/// from DerivedNormalizationProps.txt. Code points with a Quick_Check value of
+/// "Maybe" are conservatively treated as not normalized.
+///
+/// For NFD and NFKD, checks that no code point has a canonical (or compatibility)
+/// decomposition, and that combining marks are in canonical order (CCC monotonicity).
 pub fn isNormalized(utf8: []const u8, form: NormalizationForm) bool {
     var iter = std.unicode.Utf8Iterator{ .bytes = utf8, .i = 0 };
     var last_ccc: CombiningClass = 0;
@@ -61,11 +64,15 @@ pub fn isNormalized(utf8: []const u8, form: NormalizationForm) bool {
 
         // Form-specific checks
         switch (form) {
-            .nfc, .nfkc => {
-                // For NFC/NFKC, the partial check only validates CCC ordering.
-                // A full NFC check would require Quick_Check tables to detect
-                // sequences like e + combining acute that should be composed.
-                // This is a known limitation documented in this function's doc comment.
+            .nfc => {
+                const qc = ucd_nfc_qc.getNfcQc(cp);
+                if (qc == 1) return false; // No
+                if (qc == 2) return false; // Maybe — conservative: treat as not normalized
+            },
+            .nfkc => {
+                const qc = ucd_nfkc_qc.getNfkcQc(cp);
+                if (qc == 1) return false; // No
+                if (qc == 2) return false; // Maybe — conservative: treat as not normalized
             },
             .nfd, .nfkd => {
                 // For NFD/NFKD: if a character has a decomposition (canonical or
@@ -968,23 +975,54 @@ test "isNormalized: CCC ordering violation detected" {
     try testing.expect(!isNormalized(wrong_order, .nfd));
 }
 
-test "isNormalized: NFC form doc comment behavior" {
+test "isNormalized: NFC detects decomposed sequences via Quick_Check" {
     const testing = std.testing;
 
-    // Document the current behavior: isNormalized for NFC is a partial check.
-    // e + combining acute in NFC should ideally return false (it should be
-    // composed to e-acute), but the current partial implementation only checks
-    // CCC ordering for NFC. This test documents the known limitation.
+    // e + combining acute (U+0301) is in NFD form, NOT NFC form.
+    // The combining acute accent has NFC_QC=Maybe, so isNormalized
+    // conservatively returns false.
     const nfd_input = "e\xCC\x81"; // e + combining acute (NFD form)
+    try testing.expect(!isNormalized(nfd_input, .nfc));
 
-    // Current behavior: this may return true for NFC because the partial
-    // NFC check only validates CCC ordering, not composability.
-    // We document whatever the actual behavior is here.
-    const result = isNormalized(nfd_input, .nfc);
-    // The CCC ordering is correct (only one combining mark), so the partial
-    // check returns true even though this is not actually NFC-normalized.
-    // This is a known limitation documented in the function's doc comment.
-    try testing.expect(result == true);
+    // Precomposed e-acute (U+00E9) IS in NFC form.
+    const nfc_input = "\xC3\xA9"; // e-acute (NFC form)
+    try testing.expect(isNormalized(nfc_input, .nfc));
+}
+
+test "isNormalized: NFKC detects decomposed sequences via Quick_Check" {
+    const testing = std.testing;
+
+    // e + combining acute should not be NFKC either
+    const nfd_input = "e\xCC\x81";
+    try testing.expect(!isNormalized(nfd_input, .nfkc));
+
+    // Fullwidth A (U+FF21) has NFKC_QC=No
+    const fullwidth_a = "\xEF\xBC\xA1"; // U+FF21
+    try testing.expect(!isNormalized(fullwidth_a, .nfkc));
+}
+
+test "isNormalized: NFC and NFKC accept ASCII" {
+    const testing = std.testing;
+
+    const ascii = "hello";
+    try testing.expect(isNormalized(ascii, .nfc));
+    try testing.expect(isNormalized(ascii, .nfd));
+    try testing.expect(isNormalized(ascii, .nfkc));
+    try testing.expect(isNormalized(ascii, .nfkd));
+}
+
+test "isNormalized: NFC accepts precomposed, NFD accepts decomposed" {
+    const testing = std.testing;
+
+    // e-acute precomposed (U+00E9) - NFC form
+    const composed = "\xC3\xA9";
+    try testing.expect(isNormalized(composed, .nfc));
+    try testing.expect(!isNormalized(composed, .nfd));
+
+    // e + combining acute - NFD form
+    const decomposed = "e\xCC\x81";
+    try testing.expect(!isNormalized(decomposed, .nfc));
+    try testing.expect(isNormalized(decomposed, .nfd));
 }
 
 test "isNormalized: NFKD detects compatibility decomposable characters" {

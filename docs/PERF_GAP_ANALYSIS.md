@@ -4,7 +4,7 @@
 **Repository:** devnw/zig/strings (branch: main, commit: 5c110b1)
 **Analyzer:** Claude Opus 4.6 (automated performance audit)
 **Scope:** Full library performance audit -- Phases 1-4 + Wave 2 + Wave 3 closure + Phase 4 review
-**Overall rating:** GOOD (24 closed items, no regressions detected)
+**Overall rating:** GOOD (26 closed items, no regressions detected)
 
 ---
 
@@ -16,18 +16,16 @@
 |---|---|---|---|---|---|---|
 | P0 (SLO breach / outage risk) | 4 | 3 | 1 | 0 | 0 | 0 |
 | P1 (Material user-facing impact) | 8 | 5 | 0 | 2 | 1 | 0 |
-| P2 (Moderate impact / cost) | 18 | 13 | 0 | 3 | 2 | 0 |
-| P3 (Minor optimization) | 4 | 3 | 0 | 0 | 1 | 0 |
-| **Total** | **34** | **24** | **1** | **5** | **4** | **0** |
+| P2 (Moderate impact / cost) | 18 | 14 | 0 | 3 | 1 | 0 |
+| P3 (Minor optimization) | 4 | 4 | 0 | 0 | 0 | 0 |
+| **Total** | **34** | **26** | **1** | **5** | **2** | **0** |
 
-**Phase 4 review closure verification:** All 21 previously closed items verified -- no regressions detected. 3 new items closed (P2-NEW-1, P2-NEW-2, P3-NEW-1).
+**Phase 4 review closure verification:** All 21 previously closed items verified -- no regressions detected. 3 new items closed (P2-NEW-1, P2-NEW-2, P3-NEW-1). P2-10 and P3-1 closed via block-indexed lookup tables.
 
-### Top 4 Active Risks by Expected Impact
+### Top 2 Active Risks by Expected Impact
 
 1. **P1-6** -- Table-based `getCategory()` / `getGraphemeBreak()`. PerfScore 80. 3-5x grapheme, 2-3x NFC. [#68](https://gitlab.com/devnw/zig/strings/-/issues/68)
-2. **P2-10** -- O(1) decomposition/composition tables. PerfScore 44. 10-25% NFC improvement. [#80](https://gitlab.com/devnw/zig/strings/-/issues/80)
-3. **P2-3** -- `normalize()` materializes full codepoint buffer. PerfScore 35. Streaming with fixed windows.
-4. **P3-1** -- Composition binary search on 941-entry flat array. PerfScore 15. Subsumed by P2-10.
+2. **P2-3** -- `normalize()` materializes full codepoint buffer. PerfScore 35. Streaming with fixed windows.
 
 ### Top 5 Resolved Risks (Historical)
 
@@ -76,7 +74,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | 16 | P2 | 48 | [P4 NEW] 11 ArrayLists still missing `ensureTotalCapacity` | manipulation.zig, search.zig, parallel.zig, identifier.zig, line_break.zig, bidi.zig | 29 total sites across 11 files verified | 10-20% alloc improvement in affected paths | [#78](https://gitlab.com/devnw/zig/strings/-/issues/78) | Add `ensureTotalCapacity(allocator, input.len)` to remaining 11 sites | Multiple | Quarter | Closed |
 | 17 | P2 | 48 | [P3] `ensureTotalCapacity` for ~24 ArrayList usages (original scope) | case.zig, formatting.zig, collation.zig, manipulation.zig + 11 more | 29 total sites across 11 files | 10-20% alloc improvement | [#78](https://gitlab.com/devnw/zig/strings/-/issues/78) | Add `ensureTotalCapacity(allocator, input.len)` | Multiple | Quarter | Closed |
 | 18 | P2 | 45 | `containsAny` O(n*m) nested iteration | manipulation.zig | `src/ops/manipulation.zig` -- now uses `buildAsciiLookup()` for O(1) ASCII membership | 2-10x for large ASCII char sets | [#44](https://gitlab.com/devnw/zig/strings/-/issues/44) | `[256]bool` lookup table (closed as part of P2-8) | git blame manipulation.zig | Quarter | **Closed** |
-| 19 | P2 | **44** | **[P3]** O(1) decomposition/composition tables | decomposition.zig, composition.zig | `src/unicode/data/decomposition.zig:2087-2095`, `src/unicode/data/composition.zig:965-979` | 10-25% NFC improvement | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) | Two-level index or perfect hash | git blame decomposition.zig | Quarter | Open |
+| 19 | P2 | **44** | **[P3]** O(1) decomposition/composition tables | decomposition.zig, composition.zig | `src/unicode/data/decomposition.zig`, `src/unicode/data/composition.zig` -- block-indexed lookup | 10-25% NFC improvement | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) | Block index tables (cp >> 8) narrow search range | git blame decomposition.zig | Quarter | **Closed** |
 | 20 | P2 | 40 | `StringBuilder.replace` byte-by-byte scan | builder.zig | `src/builder.zig:152-173` | 3-10x for large buffers | -- | `std.mem.indexOf` + bulk copy | git blame builder.zig | Quarter | Closed |
 | 21 | P2 | 40 | Parallel map threshold 4096 too low | parallel.zig | `src/parallel.zig:157` -- (now 65536) | 0.84x seq (fixed to 65KB) | -- | Raised to 65536 | git blame parallel.zig | Quarter | Closed |
 | 22 | P2 | **40** | **[P3]** Batch template interpolation (per-byte append) | formatting.zig | `src/conversion/formatting.zig:24-64,81-153` | 5-10x for large templates | [#83](https://gitlab.com/devnw/zig/strings/-/issues/83) | Track literal segments, bulk appendSlice | git blame formatting.zig | Quarter | Closed |
@@ -89,7 +87,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | 29 | P2 | 30 | `isExtendedPictographic` incomplete ranges | grapheme.zig | `src/unicode/grapheme.zig:225-241` -- "Simplified" | Incorrect grapheme counts | -- | Full UCD Extended_Pictographic table | git blame grapheme.zig | Quarter | Won't Do |
 | 30 | P2 | 25 | `replace()` scans string twice | manipulation.zig | `src/ops/manipulation.zig` -- delegates to `replaceN()` which uses intentional double scan for exact allocation | ~1.2x overhead | [#46](https://gitlab.com/devnw/zig/strings/-/issues/46) | Won't fix: same rationale as P2-16 (exact pre-allocation avoids realloc overhead) | git blame manipulation.zig | Quarter | **Won't Do** |
 | 31 | P3 | **15** | **[P4-REV NEW]** `reverse()` over-allocates cluster ArrayList by 16x for ASCII | manipulation.zig | `src/ops/manipulation.zig:319` -- capacity hint changed to `str.len / 4 + 1` | 16x memory overhead reduced to ~4x | -- | Use `str.len / 4 + 1` as capacity hint | git blame manipulation.zig | Backlog | **Closed** |
-| 32 | P3 | 15 | Composition binary search on 941-entry array | composition.zig | `src/unicode/data/composition.zig:965-979` | <10% improvement | -- | Two-level index | git blame composition.zig | Backlog | Open |
+| 32 | P3 | 15 | Composition binary search on 941-entry array | composition.zig | `src/unicode/data/composition.zig` -- block-indexed | <10% improvement | -- | Block index on starter (subsumed by P2-10) | git blame composition.zig | Backlog | **Closed** |
 | 33 | P3 | 10 | Redundant `getCombiningClass` in CCC sort | normalization.zig | `src/unicode/normalization.zig:493-497` | Negligible (2-4 element runs) | -- | Cache CCC values | git blame normalization.zig | Backlog | Closed |
 | 34 | P3 | 10 | `appendRepeat` N separate appendSlice calls | builder.zig | `src/builder.zig:82-87` | Minor for small N | -- | Pre-allocate before loop | git blame builder.zig | Backlog | Closed |
 
@@ -469,21 +467,15 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 - **Perf Impact:** 10-25% NFC improvement (current: 82,641 ns/op).
 - **Evidence:**
   ```
-  // src/unicode/data/decomposition.zig:2087-2095
-  pub fn getDecomposition(cp: Codepoint) ?[]const Codepoint {
-      if (binarySearchDecomp1(cp)) |result| return &result.decomp;
-      if (binarySearchDecomp2(cp)) |result| return &result.decomp;
-      return null;
-  }
-
-  // src/unicode/data/composition.zig:965-979 -- binary search on 941 entries
+  // Before: full binary search over 1035+1026 entries (decomp) and 941 entries (comp)
+  // After: block index (cp >> 8) narrows to per-block range, then short binary search
+  // decomp1_block_index: 763 blocks, decomp2_block_index: 119 blocks
+  // comp_block_index: 282 blocks
   ```
-- **Fix Guidance:** Two-level index: group by high bits, binary search within blocks. Or comptime perfect hash.
-- **How to verify:** Profile NFC on text with many combining characters. Expected: 10-25% improvement.
-- **Affected Paths:** `src/unicode/data/decomposition.zig`, `src/unicode/data/composition.zig`
-- **Rollout Risk:** Low. Validate with NormalizationTest.txt.
-- **Owner:** git blame src/unicode/data/ | **SLA:** Next quarter
-- **Status:** Open
+- **Fix Applied:** Block index tables generated by `tools/generate_ucd.py`. `stage1[cp >> 8]` gives `[start, end)` range into the flat sorted arrays. Binary search within block is 0-8 comparisons instead of 10+ for the full array. Public API unchanged: `getDecomposition(cp)` and `getComposite(starter, combiner)` signatures identical.
+- **Affected Paths:** `src/unicode/data/decomposition.zig`, `src/unicode/data/composition.zig`, `tools/generate_ucd.py`
+- **Rollout Risk:** Low. All 543 tests pass including normalization round-trip tests.
+- **Status:** Closed (2026-03-24). Block-indexed lookup tables reduce search space from O(log n) over full array to O(log k) where k is entries per 256-codepoint block (typically 0-8). Also closes P3-1.
 
 #### P2-2: `StringBuilder.replace` Byte-by-Byte Scan
 
@@ -907,9 +899,9 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 
 - **PerfSeverity:** P3 | **PerfScore:** 15 (Impact: 1, Likelihood: 3, Confidence: suspected)
 - **Summary:** Binary search on 941-entry array. ~10 comparisons per lookup.
-- **Evidence:** `src/unicode/data/composition.zig:965-979`
+- **Evidence:** `src/unicode/data/composition.zig` -- now uses `comp_block_index[starter >> 8]` to narrow range
 - **Fix Guidance:** Two-level index or perfect hash. Now subsumed by P2-10.
-- **Status:** Open (subsumed by P2-10)
+- **Status:** Closed (2026-03-24). Subsumed by P2-10. Block index on starter codepoint narrows 941-entry search to per-block range (typically 1-58 entries).
 
 #### P3-2: Redundant `getCombiningClass` in CCC Sort
 
@@ -950,7 +942,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 |---|---|---|---|
 | **P1-6:** Table-based getCategory/getGraphemeBreak | 2-3 days | 3-5x grapheme, 2-3x NFC | [#68](https://gitlab.com/devnw/zig/strings/-/issues/68) |
 | ~~**P2-12:** Hash set / bitset for 4 O(n*m) search functions~~ | ~~1 day~~ | ~~2-10x for large codepoint sets~~ | -- **Closed** |
-| **P2-10:** O(1) decomposition/composition tables | 1-2 days | 10-25% NFC | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) |
+| ~~**P2-10:** O(1) decomposition/composition tables~~ | ~~1-2 days~~ | ~~10-25% NFC~~ | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) **Closed** |
 | ~~P2-1 + P2-5: Hash set for containsAny/trim (Unicode)~~ | ~~1 day~~ | ~~2-10x for large character sets~~ | ~~[#44](https://gitlab.com/devnw/zig/strings/-/issues/44)~~ **Closed** (via P2-8) |
 | ~~**P2-15:** Regex CharClass binary search / bitmap~~ | ~~1 day~~ | ~~5-10x for large character classes~~ | -- | **Closed** |
 
@@ -968,7 +960,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 
 1. **Quick-check property tables:** The P0-1 fix requires generating NFC_QC/NFD_QC/NFKC_QC/NFKD_QC tables from UCD DerivedNormalizationProps.txt. The existing `tools/generate_ucd.py` may need extension. **Measurement to confirm:** run `isNormalized(already_nfc_text, .nfc)` -- currently returns `true` for wrong reasons; after fix, should return `true` for the right reasons AND enable the quick-check skip in `normalize()`.
 
-2. **UCD table generation tooling:** Findings P1-6, P2-10, and the deferred P0-1 all require generating lookup tables from UCD data files. A shared code generation pipeline would reduce effort for all three. **Blocker:** No existing generation tooling for two-level trie format.
+2. **UCD table generation tooling:** Findings P1-6 and the deferred P0-1 require generating lookup tables from UCD data files. A shared code generation pipeline would reduce effort. **Note:** P2-10 is now resolved -- `tools/generate_ucd.py` has been extended with block index generation for decomposition and composition tables. The same pattern can be applied to other UCD tables.
 
 3. **Parallel threshold calibration:** The P1-8 fix (raise to 10MB) is based on benchmark data for trivial per-element operations. For expensive operations (e.g., normalize per element), the crossover point may be lower. **Measurement to confirm:** benchmark parallel operations with varying per-element costs to find the optimal adaptive threshold formula.
 
@@ -1004,7 +996,7 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | P2-6 | [#46](https://gitlab.com/devnw/zig/strings/-/issues/46) | **Won't Do** (intentional double scan for exact allocation) |
 | P2-8 | [#85](https://gitlab.com/devnw/zig/strings/-/issues/85) | **Closed** (Wave 3 -- buildAsciiLookup bitset) |
 | P2-9 / P2-14 | [#78](https://gitlab.com/devnw/zig/strings/-/issues/78) | **Closed** (29/29 sites fixed across 11 files) |
-| P2-10 | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) | Open |
+| P2-10 | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) | **Closed** (2026-03-24 -- block-indexed lookup tables) |
 | P2-11 | [#83](https://gitlab.com/devnw/zig/strings/-/issues/83) | Closed |
 | P2-12 | -- (not yet filed) | **Closed** (Wave 3 -- buildCodepointLookup/buildByteLookup) |
 | P2-13 | -- (not yet filed) | **Closed** (2026-03-24) |

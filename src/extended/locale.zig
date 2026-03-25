@@ -624,3 +624,450 @@ test "formatNumber negative infinity returns error" {
 
     try testing.expectError(error.InvalidNumber, locale.formatNumber(testing.allocator, -std.math.inf(f64)));
 }
+
+// ============================================================
+// Locale data coverage tests (Q-LOC1)
+// Tests for all locale definitions in locale_data.zig
+// ============================================================
+
+test "locale data en_GB" {
+    const testing = std.testing;
+    const l = Locale.get(.en_GB);
+
+    try testing.expectEqualStrings("en", l.language);
+    try testing.expectEqualStrings("GB", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    const items = [_][]const u8{ "apples", "oranges" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("apples and oranges", list);
+}
+
+test "locale data en_AU" {
+    const testing = std.testing;
+    const l = Locale.get(.en_AU);
+
+    try testing.expectEqualStrings("en", l.language);
+    try testing.expectEqualStrings("AU", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(!l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    const items = [_][]const u8{ "one", "two", "three" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("one, two and three", list);
+}
+
+test "locale data en_CA" {
+    const testing = std.testing;
+    const l = Locale.get(.en_CA);
+
+    try testing.expectEqualStrings("en", l.language);
+    try testing.expectEqualStrings("CA", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(!l.time.hour_24);
+    try testing.expectEqualStrings("a.m.", l.time.am);
+    try testing.expectEqualStrings("p.m.", l.time.pm);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+}
+
+test "locale data es_ES" {
+    const testing = std.testing;
+    const l = Locale.get(.es_ES);
+
+    try testing.expectEqualStrings("es", l.language);
+    try testing.expectEqualStrings("ES", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, '.'), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1.234.567,89", num);
+
+    const items = [_][]const u8{ "uno", "dos" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("uno y dos", list);
+}
+
+test "locale data it_IT" {
+    const testing = std.testing;
+    const l = Locale.get(.it_IT);
+
+    try testing.expectEqualStrings("it", l.language);
+    try testing.expectEqualStrings("IT", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, '.'), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1.234.567,89", num);
+
+    const items = [_][]const u8{ "uno", "due" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("uno e due", list);
+}
+
+test "locale data pt_BR" {
+    const testing = std.testing;
+    const l = Locale.get(.pt_BR);
+
+    try testing.expectEqualStrings("pt", l.language);
+    try testing.expectEqualStrings("BR", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, '.'), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1.234.567,89", num);
+
+    const items = [_][]const u8{ "um", "dois" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("um e dois", list);
+
+    // Test currency (BRL)
+    const currency = try l.formatCurrency(testing.allocator, 1234.56, .BRL);
+    defer testing.allocator.free(currency);
+    try testing.expectEqualStrings("R$ 1.234,56", currency);
+}
+
+test "locale data pt_PT" {
+    const testing = std.testing;
+    const l = Locale.get(.pt_PT);
+
+    try testing.expectEqualStrings("pt", l.language);
+    try testing.expectEqualStrings("PT", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ' '), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1 234 567,89", num);
+
+    const items = [_][]const u8{ "um", "dois", "tres" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("um, dois e tres", list);
+}
+
+test "locale data nl_NL" {
+    const testing = std.testing;
+    const l = Locale.get(.nl_NL);
+
+    try testing.expectEqualStrings("nl", l.language);
+    try testing.expectEqualStrings("NL", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, '.'), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1.234.567,89", num);
+
+    const items = [_][]const u8{ "een", "twee" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("een en twee", list);
+}
+
+test "locale data pl_PL" {
+    const testing = std.testing;
+    const l = Locale.get(.pl_PL);
+
+    try testing.expectEqualStrings("pl", l.language);
+    try testing.expectEqualStrings("PL", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ' '), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1 234 567,89", num);
+
+    const items = [_][]const u8{ "jeden", "dwa" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("jeden i dwa", list);
+}
+
+test "locale data ru_RU" {
+    const testing = std.testing;
+    const l = Locale.get(.ru_RU);
+
+    try testing.expectEqualStrings("ru", l.language);
+    try testing.expectEqualStrings("RU", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ' '), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1 234 567,89", num);
+
+    // Russian list separator uses Cyrillic "и" (U+0438)
+    const items = [_][]const u8{ "one", "two" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("one \u{0438} two", list);
+}
+
+test "locale data zh_CN" {
+    const testing = std.testing;
+    const l = Locale.get(.zh_CN);
+
+    try testing.expectEqualStrings("zh", l.language);
+    try testing.expectEqualStrings("CN", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+    try testing.expectEqualStrings("\u{4e0a}\u{5348}", l.time.am); // 上午
+    try testing.expectEqualStrings("\u{4e0b}\u{5348}", l.time.pm); // 下午
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    // Chinese list separator is ideographic comma U+3001, connector is U+548C (和)
+    const items = [_][]const u8{ "a", "b" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("a\u{548c}b", list);
+}
+
+test "locale data zh_TW" {
+    const testing = std.testing;
+    const l = Locale.get(.zh_TW);
+
+    try testing.expectEqualStrings("zh", l.language);
+    try testing.expectEqualStrings("TW", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(!l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+}
+
+test "locale data ja_JP" {
+    const testing = std.testing;
+    const l = Locale.get(.ja_JP);
+
+    try testing.expectEqualStrings("ja", l.language);
+    try testing.expectEqualStrings("JP", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+    try testing.expectEqualStrings("\u{5348}\u{524d}", l.time.am); // 午前
+    try testing.expectEqualStrings("\u{5348}\u{5f8c}", l.time.pm); // 午後
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    // Japanese list separator is ideographic comma U+3001, pair separator is U+3068 (と)
+    const items = [_][]const u8{ "a", "b" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("a\u{3068}b", list);
+
+    // Three items: separator is U+3001, last_separator is also U+3001
+    const items3 = [_][]const u8{ "a", "b", "c" };
+    const list3 = try l.formatList(testing.allocator, &items3);
+    defer testing.allocator.free(list3);
+    try testing.expectEqualStrings("a\u{3001}b\u{3001}c", list3);
+
+    // Test JPY currency (zero decimal places)
+    const currency = try l.formatCurrency(testing.allocator, 1234.0, .JPY);
+    defer testing.allocator.free(currency);
+    try testing.expectEqualStrings("\xc2\xa51,234", currency);
+}
+
+test "locale data ko_KR" {
+    const testing = std.testing;
+    const l = Locale.get(.ko_KR);
+
+    try testing.expectEqualStrings("ko", l.language);
+    try testing.expectEqualStrings("KR", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(!l.time.hour_24);
+    try testing.expectEqualStrings("\u{c624}\u{c804}", l.time.am); // 오전
+    try testing.expectEqualStrings("\u{c624}\u{d6c4}", l.time.pm); // 오후
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    // Korean list pair separator uses U+BC0F (및)
+    const items = [_][]const u8{ "a", "b" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("a \u{bc0f} b", list);
+
+    // Test KRW currency (zero decimal places)
+    const currency = try l.formatCurrency(testing.allocator, 50000.0, .KRW);
+    defer testing.allocator.free(currency);
+    try testing.expectEqualStrings("\xe2\x82\xa950,000", currency);
+}
+
+test "locale data ar_SA" {
+    const testing = std.testing;
+    const l = Locale.get(.ar_SA);
+
+    try testing.expectEqualStrings("ar", l.language);
+    try testing.expectEqualStrings("SA", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(!l.time.hour_24);
+    try testing.expectEqualStrings("\u{0635}", l.time.am); // ص
+    try testing.expectEqualStrings("\u{0645}", l.time.pm); // م
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    // Arabic list separator uses Arabic comma U+060C followed by space, connector uses U+0648 (و)
+    const items = [_][]const u8{ "a", "b" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("a \u{0648}b", list);
+}
+
+test "locale data he_IL" {
+    const testing = std.testing;
+    const l = Locale.get(.he_IL);
+
+    try testing.expectEqualStrings("he", l.language);
+    try testing.expectEqualStrings("IL", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+
+    // Hebrew list pair separator uses U+05D5 (ו)
+    const items = [_][]const u8{ "a", "b" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("a \u{05d5}b", list);
+}
+
+test "locale data hi_IN" {
+    const testing = std.testing;
+    const l = Locale.get(.hi_IN);
+
+    try testing.expectEqualStrings("hi", l.language);
+    try testing.expectEqualStrings("IN", l.region);
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+    try testing.expectEqual(@as(u8, 2), l.number.group_size); // Indian grouping
+    try testing.expect(!l.time.hour_24);
+
+    // Hindi AM/PM designators (Devanagari)
+    try testing.expectEqualStrings("\u{092a}\u{0942}\u{0930}\u{094d}\u{0935}\u{093e}\u{0939}\u{094d}\u{0928}", l.time.am); // पूर्वाह्न
+    try testing.expectEqualStrings("\u{0905}\u{092a}\u{0930}\u{093e}\u{0939}\u{094d}\u{0928}", l.time.pm); // अपराह्न
+
+    // Hindi uses group_size=2 (Indian numbering: 12,34,567)
+    // Note: formatNumber uses the group_size for grouping, but with group_size=2,
+    // 1234567 -> first group is 1234567 % 2 = 1, then groups of 2: 1,23,45,67
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,23,45,67.89", num);
+
+    // Hindi list pair separator uses U+0914 U+0930 (और)
+    const items = [_][]const u8{ "a", "b" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("a \u{0914}\u{0930} b", list);
+}
+
+test "locale data tr_TR" {
+    const testing = std.testing;
+    const l = Locale.get(.tr_TR);
+
+    try testing.expectEqualStrings("tr", l.language);
+    try testing.expectEqualStrings("TR", l.region);
+    try testing.expectEqual(@as(u8, ','), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, '.'), l.number.group_sep);
+    try testing.expect(l.time.hour_24);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1.234.567,89", num);
+
+    // Turkish list separator
+    const items = [_][]const u8{ "bir", "iki" };
+    const list = try l.formatList(testing.allocator, &items);
+    defer testing.allocator.free(list);
+    try testing.expectEqualStrings("bir ve iki", list);
+
+    // Turkish TRY currency
+    const currency = try l.formatCurrency(testing.allocator, 1234.56, .TRY);
+    defer testing.allocator.free(currency);
+    try testing.expectEqualStrings("\xe2\x82\xba1.234,56", currency);
+}
+
+test "locale data root" {
+    const testing = std.testing;
+    const l = Locale.get(.root);
+
+    try testing.expectEqualStrings("", l.language);
+    try testing.expectEqualStrings("", l.region);
+    // Root locale uses defaults
+    try testing.expectEqual(@as(u8, '.'), l.number.decimal_sep);
+    try testing.expectEqual(@as(u8, ','), l.number.group_sep);
+
+    const num = try l.formatNumber(testing.allocator, 1234567.89);
+    defer testing.allocator.free(num);
+    try testing.expectEqualStrings("1,234,567.89", num);
+}
+
+test "all locale IDs resolve via Locale.get" {
+    // Exhaustive test: every LocaleId variant returns a valid Locale
+    const testing = std.testing;
+    const ids = [_]LocaleId{
+        .en_US, .en_GB, .en_AU, .en_CA,
+        .de_DE, .fr_FR, .es_ES, .it_IT,
+        .pt_BR, .pt_PT, .nl_NL, .pl_PL,
+        .ru_RU, .zh_CN, .zh_TW, .ja_JP,
+        .ko_KR, .ar_SA, .he_IL, .hi_IN,
+        .tr_TR, .root,
+    };
+
+    for (ids) |id| {
+        const l = Locale.get(id);
+        try testing.expectEqual(id, l.id);
+        // Every locale must have valid number format separators (non-zero)
+        try testing.expect(l.number.decimal_sep != 0);
+        try testing.expect(l.number.group_sep != 0);
+        // Every locale must produce a valid formatted number
+        const num = try l.formatNumber(testing.allocator, 42.5);
+        defer testing.allocator.free(num);
+        try testing.expect(num.len > 0);
+    }
+}

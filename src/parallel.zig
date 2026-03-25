@@ -34,7 +34,11 @@ const spice = if (build_options.enable_spice) @import("spice") else struct {
 var global_pool: if (build_options.enable_spice) ?spice.ThreadPool else void = if (build_options.enable_spice) null else {};
 var pool_mutex: std.Thread.Mutex = .{};
 
-/// Get the global spice thread pool, initializing if needed
+/// Get the global spice thread pool, initializing if needed.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple
+/// threads. Initialization is protected by an internal mutex, ensuring
+/// the pool is created exactly once (lazy singleton pattern).
 pub fn getPool() if (build_options.enable_spice) *spice.ThreadPool else void {
     if (!build_options.enable_spice) return;
 
@@ -49,8 +53,12 @@ pub fn getPool() if (build_options.enable_spice) *spice.ThreadPool else void {
 }
 
 /// Deinitializes the global thread pool.
-/// SAFETY: Must only be called after all parallel operations have completed.
-/// Calling this while operations are in-flight causes undefined behavior.
+///
+/// Thread-safe: This function is safe to call concurrently with `getPool()`
+/// (protected by the same internal mutex). However, it is NOT safe to call
+/// while parallel operations are in-flight -- all operations must have
+/// completed before calling this function. Violating this invariant causes
+/// undefined behavior.
 pub fn deinitPool() void {
     if (!build_options.enable_spice) return;
 
@@ -67,7 +75,8 @@ pub fn deinitPool() void {
 // Parallel Search Operations
 // ============================================================================
 
-/// Context for parallel count operations
+/// Context for parallel count operations.
+/// This type holds read-only input slices and is safe to share across threads.
 pub fn CountContext(comptime T: type) type {
     return struct {
         haystack: []const T,
@@ -75,7 +84,12 @@ pub fn CountContext(comptime T: type) type {
     };
 }
 
-/// Parallel count of non-overlapping occurrences of needle in haystack
+/// Parallel count of non-overlapping occurrences of needle in haystack.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple
+/// threads. Each invocation operates on its own input slices and internal
+/// state. The shared global thread pool is accessed through the
+/// mutex-protected `getPool()`.
 pub fn parallelCount(comptime T: type, haystack: []const T, needle: []const T) usize {
     if (needle.len == 0) return 0;
     if (haystack.len < needle.len) return 0;
@@ -103,13 +117,12 @@ fn ParallelCountTask(comptime T: type) type {
                 return sequentialCount(T, haystack, needle);
             }
 
-            // Fork/join - split haystack
+            // Fork/join - split haystack at midpoint with no overlap.
+            // Each half is counted independently, then a small boundary
+            // reconciliation corrects for matches straddling the split.
             const mid = haystack.len / 2;
-            // Ensure we don't miss matches at the split point
-            const overlap = needle.len - 1;
-            const left_end = @min(mid + overlap, haystack.len);
 
-            const left_ctx = Ctx{ .haystack = haystack[0..left_end], .needle = needle };
+            const left_ctx = Ctx{ .haystack = haystack[0..mid], .needle = needle };
             const right_ctx = Ctx{ .haystack = haystack[mid..], .needle = needle };
 
             var fut = spice.Future(Ctx, usize).init();
@@ -118,19 +131,88 @@ fn ParallelCountTask(comptime T: type) type {
             const left_count = t.call(usize, task, left_ctx);
             const right_count = if (fut.join(t)) |val| val else t.call(usize, task, right_ctx);
 
-            // Subtract matches in overlapping region to avoid double counting
-            const overlap_count = if (overlap > 0 and mid > 0)
-                sequentialCount(T, haystack[mid..@min(mid + overlap, haystack.len)], needle)
-            else
-                0;
-
-            return left_count + right_count - overlap_count;
+            return reconcileBoundaryCounts(T, haystack, needle, mid, left_count, right_count);
         }
     };
 }
 
+/// Reconcile independently-computed left and right counts at a split boundary.
+///
+/// When a haystack is split at `mid` into [0..mid] and [mid..], each half counts
+/// non-overlapping matches independently. The greedy non-overlapping counting is
+/// order-dependent: the left half's last match may affect which matches are valid
+/// near the boundary. This function corrects for that by:
+///
+/// 1. Finding the left half's resume position (where its scan stopped)
+/// 2. Scanning for straddling matches (starting before mid, ending after mid)
+/// 3. If a straddling match is found, re-counting the right portion from after
+///    the straddling match instead of using the independently-computed right_count
+fn reconcileBoundaryCounts(
+    comptime T: type,
+    haystack: []const T,
+    needle: []const T,
+    mid: usize,
+    left_count: usize,
+    right_count: usize,
+) usize {
+    if (needle.len <= 1) {
+        // Single-element needles can't straddle a split point.
+        return left_count + right_count;
+    }
+
+    // Find where the left half's sequential scan would resume.
+    const left_resume = sequentialCountResume(T, haystack[0..mid], needle);
+
+    // Scan for straddling matches: those starting at left_resume..mid-1
+    // that extend past mid (and thus were missed by both halves).
+    var straddling: usize = 0;
+    var scan_pos = left_resume;
+    var last_end = left_resume;
+
+    while (scan_pos < mid and scan_pos + needle.len <= haystack.len) {
+        if (std.mem.eql(T, haystack[scan_pos..][0..needle.len], needle)) {
+            straddling += 1;
+            scan_pos += needle.len;
+            last_end = scan_pos;
+        } else {
+            scan_pos += 1;
+        }
+    }
+
+    if (last_end > mid) {
+        // A straddling match consumed bytes past mid. The right half's
+        // independent count may include matches that overlap with the
+        // straddling match. Re-count from where the straddling scan ended.
+        return left_count + straddling + sequentialCount(T, haystack[last_end..], needle);
+    }
+
+    return left_count + straddling + right_count;
+}
+
+/// Returns the position where a sequential non-overlapping scan would resume
+/// (i.e., the first position not yet consumed after the last match or the
+/// position after the last checked byte).
+fn sequentialCountResume(comptime T: type, haystack: []const T, needle: []const T) usize {
+    if (needle.len == 0 or haystack.len < needle.len) return 0;
+    var i: usize = 0;
+    while (i <= haystack.len - needle.len) {
+        if (std.mem.eql(T, haystack[i..][0..needle.len], needle)) {
+            i += needle.len;
+        } else {
+            i += 1;
+        }
+    }
+    return i;
+}
+
 fn sequentialCount(comptime T: type, haystack: []const T, needle: []const T) usize {
     if (needle.len == 0 or haystack.len < needle.len) return 0;
+
+    // SIMD fast-path: single-element needles can use vectorized byte counting
+    // instead of the byte-by-byte comparison loop.
+    if (needle.len == 1) {
+        return countScalar(T, haystack, needle[0]);
+    }
 
     var count: usize = 0;
     var i: usize = 0;
@@ -145,11 +227,55 @@ fn sequentialCount(comptime T: type, haystack: []const T, needle: []const T) usi
     return count;
 }
 
+/// SIMD-accelerated count of scalar occurrences using platform-preferred vector width.
+/// Falls back to a simple loop when SIMD is unavailable or the input is too short.
+fn countScalar(comptime T: type, haystack: []const T, needle: T) usize {
+    // Use the platform's preferred vector width if available.
+    if (comptime std.simd.suggestVectorLength(T)) |vec_len| {
+        if (!@inComptime() and haystack.len >= vec_len) {
+            return countScalarSimd(T, vec_len, haystack, needle);
+        }
+    }
+
+    var count: usize = 0;
+    for (haystack) |elem| {
+        if (elem == needle) count += 1;
+    }
+    return count;
+}
+
+/// Inner SIMD loop for countScalar. Processes vec_len elements per iteration.
+fn countScalarSimd(comptime T: type, comptime vec_len: comptime_int, haystack: []const T, needle: T) usize {
+    const Vec = @Vector(vec_len, T);
+    const needle_vec: Vec = @splat(needle);
+    const MaskInt = std.meta.Int(.unsigned, vec_len);
+
+    var count: usize = 0;
+    var i: usize = 0;
+
+    while (i + vec_len <= haystack.len) {
+        const chunk: Vec = haystack[i..][0..vec_len].*;
+        const matches = chunk == needle_vec;
+        count += @popCount(@as(MaskInt, @bitCast(matches)));
+        i += vec_len;
+    }
+
+    // Handle remaining elements
+    while (i < haystack.len) {
+        if (haystack[i] == needle) count += 1;
+        i += 1;
+    }
+
+    return count;
+}
+
 // ============================================================================
 // Parallel Map Operations (apply function to each byte/codepoint)
 // ============================================================================
 
-/// Context for parallel map operations
+/// Context for parallel map operations.
+/// Each task operates on a disjoint sub-range of the input/output slices,
+/// so concurrent access within a single `parallelMap` call is safe.
 pub fn MapContext(comptime T: type) type {
     return struct {
         input: []const T,
@@ -157,7 +283,13 @@ pub fn MapContext(comptime T: type) type {
     };
 }
 
-/// Parallel map - apply a function to each element
+/// Parallel map - apply a function to each element.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple
+/// threads provided each call uses distinct `input` and `output` slices.
+/// The caller must ensure `output` does not alias with any other
+/// concurrently written memory. The shared global thread pool is accessed
+/// through the mutex-protected `getPool()`.
 pub fn parallelMap(
     comptime T: type,
     input: []const T,
@@ -208,7 +340,9 @@ fn ParallelMapTask(comptime T: type, comptime mapFn: fn (T) T) type {
 // Parallel Edit Distance (Levenshtein) for Batch Operations
 // ============================================================================
 
-/// Context for batch edit distance
+/// Context for batch edit distance.
+/// Each task operates on a disjoint sub-range of the targets/results slices,
+/// so concurrent access within a single `parallelEditDistanceBatch` call is safe.
 pub const EditDistanceBatchContext = struct {
     source: []const u8,
     targets: []const []const u8,
@@ -216,6 +350,11 @@ pub const EditDistanceBatchContext = struct {
 };
 
 /// Compute edit distance for multiple targets in parallel.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple
+/// threads provided each call uses distinct `results` slices. The `source`
+/// and `targets` slices are read-only and may be shared. The shared global
+/// thread pool is accessed through the mutex-protected `getPool()`.
 ///
 /// Note: In the parallel execution path (when spice is enabled and input
 /// exceeds the parallel threshold), individual computation failures are
@@ -332,7 +471,9 @@ pub const FuzzyResult = struct {
     score: usize,
 };
 
-/// Context for fuzzy search
+/// Context for fuzzy search.
+/// Each task operates on a disjoint sub-range of the candidates/results slices,
+/// so concurrent access within a single `parallelFuzzySearch` call is safe.
 pub const FuzzySearchContext = struct {
     query: []const u8,
     candidates: []const []const u8,
@@ -340,6 +481,11 @@ pub const FuzzySearchContext = struct {
 };
 
 /// Parallel fuzzy search - find best matches from candidates.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple
+/// threads provided each call uses distinct `results` slices. The `query`
+/// and `candidates` slices are read-only and may be shared. The shared
+/// global thread pool is accessed through the mutex-protected `getPool()`.
 ///
 /// Note: In the parallel execution path (when spice is enabled and input
 /// exceeds the parallel threshold), individual computation failures are
@@ -691,4 +837,110 @@ test "parallelCount empty needle returns zero" {
 test "parallelCount haystack shorter than needle returns zero" {
     const haystack = "hi";
     try std.testing.expectEqual(@as(usize, 0), parallelCount(u8, haystack, "hello"));
+}
+
+test "sequentialCount boundary reconciliation with dense repeating pattern" {
+    // Regression test for S25: when a repeating needle pattern spans the split
+    // midpoint, the old overlap-deduction approach could double-count because
+    // the greedy non-overlapping scan consumed bytes differently in each half.
+    //
+    // Example: "AAAAA" with needle "AAA" and mid=2:
+    //   Old left [0..4]="AAAA" -> 1, old right [2..]="AAA" -> 1, overlap=0 -> 2 (WRONG, expected 1)
+    //
+    // The fix uses clean splits with boundary reconciliation.
+
+    // Dense "AAA" in all-A buffer at various sizes
+    const allocator = std.testing.allocator;
+    const test_sizes = [_]usize{ 5, 8, 11, 14, 17, 20, 50, 100 };
+
+    for (test_sizes) |size| {
+        const buf = try allocator.alloc(u8, size);
+        defer allocator.free(buf);
+        @memset(buf, 'A');
+
+        const expected = size / 3; // "AAA" non-overlapping in all-A string
+        const mid = size / 2;
+        const left_count = sequentialCount(u8, buf[0..mid], "AAA");
+        const right_count = sequentialCount(u8, buf[mid..], "AAA");
+        const reconciled = reconcileBoundaryCounts(u8, buf, "AAA", mid, left_count, right_count);
+        try std.testing.expectEqual(expected, reconciled);
+    }
+
+    // Dense "AA" pattern
+    for (test_sizes) |size| {
+        if (size < 4) continue;
+        const buf = try allocator.alloc(u8, size);
+        defer allocator.free(buf);
+        @memset(buf, 'A');
+
+        const expected = size / 2; // "AA" non-overlapping in all-A string
+        const mid = size / 2;
+        const left_count = sequentialCount(u8, buf[0..mid], "AA");
+        const right_count = sequentialCount(u8, buf[mid..], "AA");
+        const reconciled = reconcileBoundaryCounts(u8, buf, "AA", mid, left_count, right_count);
+        try std.testing.expectEqual(expected, reconciled);
+    }
+}
+
+test "reconcileBoundaryCounts with alternating pattern" {
+    // "ABABABABABAB..." with needle "ABAB" -- tests periodic patterns
+    const allocator = std.testing.allocator;
+    const test_sizes = [_]usize{ 10, 11, 18, 19, 26, 50, 100 };
+
+    for (test_sizes) |size| {
+        const buf = try allocator.alloc(u8, size);
+        defer allocator.free(buf);
+        for (buf, 0..) |*c, i| {
+            c.* = if (i % 2 == 0) 'A' else 'B';
+        }
+
+        const expected = sequentialCount(u8, buf, "ABAB");
+        const mid = size / 2;
+        const left_count = sequentialCount(u8, buf[0..mid], "ABAB");
+        const right_count = sequentialCount(u8, buf[mid..], "ABAB");
+        const reconciled = reconcileBoundaryCounts(u8, buf, "ABAB", mid, left_count, right_count);
+        try std.testing.expectEqual(expected, reconciled);
+    }
+}
+
+test "countScalar SIMD fast-path for single-byte needle" {
+    // Verifies that the SIMD-accelerated countScalar produces correct results
+    // for various input sizes, including sizes below, at, and above typical
+    // vector widths (16, 32, 64 bytes).
+    const allocator = std.testing.allocator;
+
+    // Small input (below any vector width)
+    try std.testing.expectEqual(@as(usize, 2), countScalar(u8, "hello", 'l'));
+    try std.testing.expectEqual(@as(usize, 0), countScalar(u8, "hello", 'x'));
+    try std.testing.expectEqual(@as(usize, 1), countScalar(u8, "a", 'a'));
+    try std.testing.expectEqual(@as(usize, 0), countScalar(u8, "", 'a'));
+
+    // Exactly 16 bytes (SSE2 vector width)
+    try std.testing.expectEqual(@as(usize, 16), countScalar(u8, "aaaaaaaaaaaaaaaa", 'a'));
+
+    // Large input exercising SIMD loop + remainder
+    const sizes = [_]usize{ 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 500, 1000 };
+    for (sizes) |size| {
+        const buf = try allocator.alloc(u8, size);
+        defer allocator.free(buf);
+
+        // Fill with alternating pattern: every 3rd byte is the target
+        for (buf, 0..) |*c, i| {
+            c.* = if (i % 3 == 0) 'X' else '.';
+        }
+        const expected = (size + 2) / 3; // ceil(size/3)
+        try std.testing.expectEqual(expected, countScalar(u8, buf, 'X'));
+    }
+}
+
+test "sequentialCount uses countScalar for single-byte needle" {
+    // Verify that sequentialCount correctly dispatches to countScalar
+    // for single-byte needles and produces correct results.
+    try std.testing.expectEqual(@as(usize, 4), sequentialCount(u8, "aabaa", "a"));
+    try std.testing.expectEqual(@as(usize, 0), sequentialCount(u8, "hello", "x"));
+    try std.testing.expectEqual(@as(usize, 5), sequentialCount(u8, "aaaaa", "a"));
+
+    // Verify multi-byte still works
+    try std.testing.expectEqual(@as(usize, 2), sequentialCount(u8, "abab", "ab"));
+    try std.testing.expectEqual(@as(usize, 1), sequentialCount(u8, "aaa", "aa"));
 }

@@ -131,9 +131,34 @@ The library implements key Unicode algorithms:
 
 ## Thread Safety
 
-- All functions are thread-safe when operating on different data
-- String types are not internally synchronized
-- StringPool is NOT thread-safe; callers must provide external synchronization
+### General Guarantees
+
+- All pure functions (encoding, decoding, searching, comparison) are thread-safe when operating on different data. They hold no mutable global state.
+- String types (`String`, `String16`, `StringBuilder`) are **not** internally synchronized. Each instance must be accessed by only one thread at a time, or the caller must provide external synchronization.
+- `StringPool` is **not** thread-safe; callers must provide external synchronization for concurrent access.
+
+### Parallel Module (`src/parallel.zig`)
+
+The parallel module provides fork/join parallelism via the [spice](https://gitlab.com/devnw/zig/spice) thread pool:
+
+- **Global pool lifecycle:** The module maintains a lazily-initialized global `spice.ThreadPool` singleton. Initialization is protected by an internal mutex (`pool_mutex`), so `getPool()` is safe to call concurrently from multiple threads. The pool is created exactly once on first use.
+- **Pool teardown:** `deinitPool()` is mutex-protected against concurrent `getPool()` calls. However, it must only be called after all in-flight parallel operations have completed. Calling it while operations are running causes undefined behavior.
+- **Per-operation guarantees:** Each parallel operation (`parallelCount`, `parallelMap`, `parallelEditDistanceBatch`, `parallelFuzzySearch`) is safe to call concurrently from multiple threads, provided each call operates on distinct output/results slices. Read-only input slices (e.g., `haystack`, `source`, `query`, `candidates`) may be shared across concurrent calls. Internally, each operation splits its work into fork/join tasks that operate on disjoint sub-ranges, preventing data races within a single call.
+- **Allocator safety:** In the parallel execution path, tasks use either stack-based `FixedBufferAllocator` (for small inputs) or `page_allocator` (for large inputs), both of which are thread-safe. The caller-provided allocator is only used in the sequential fallback path.
+
+### Summary Table
+
+| Component | Thread-safe? | Notes |
+|-----------|-------------|-------|
+| Pure functions (encode, decode, search, compare) | Yes | No mutable global state |
+| String, String16, StringBuilder | No | Caller must synchronize |
+| StringPool | No | Caller must synchronize |
+| `getPool()` | Yes | Mutex-protected lazy init |
+| `deinitPool()` | Conditional | Safe vs. `getPool()`, but not vs. in-flight operations |
+| `parallelCount` | Yes | Distinct output slices required |
+| `parallelMap` | Yes | Distinct input/output slices required |
+| `parallelEditDistanceBatch` | Yes | Distinct results slices required |
+| `parallelFuzzySearch` | Yes | Distinct results slices required |
 
 ## Platform Support
 

@@ -22,6 +22,16 @@ include:
 variables:
   ZIG_VERSION: "0.15.2"
 
+# Q-CI1: Cache the Zig toolchain directory across jobs to avoid redundant
+# ~70 MB downloads on every job invocation. The .install-zig anchor already
+# checks `if [ ! -f "zig-${ZIG_VERSION}/zig" ]`, so a warm cache skips the
+# download entirely.
+default:
+  cache:
+    key: "zig-${ZIG_VERSION}"
+    paths:
+      - zig-${ZIG_VERSION}/
+
 stages:
   - lint
   - build
@@ -86,6 +96,32 @@ build:
     - *install-zig
   script:
     - zig build
+
+# GAP-0037: Cross-compilation build jobs to verify macOS/Windows platform
+# claims in README.md:11. Build-only (no execution) since CI runs on Linux.
+build-macos-x86_64:
+  stage: build
+  image: debian:bookworm-slim
+  before_script:
+    - *install-zig
+  script:
+    - zig build -Dtarget=x86_64-macos
+
+build-macos-aarch64:
+  stage: build
+  image: debian:bookworm-slim
+  before_script:
+    - *install-zig
+  script:
+    - zig build -Dtarget=aarch64-macos
+
+build-windows-x86_64:
+  stage: build
+  image: debian:bookworm-slim
+  before_script:
+    - *install-zig
+  script:
+    - zig build -Dtarget=x86_64-windows
 
 # Unit tests
 test:

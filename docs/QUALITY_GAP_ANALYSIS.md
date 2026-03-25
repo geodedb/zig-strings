@@ -1,25 +1,29 @@
 # Quality Gap Analysis
 
-Last updated: 2026-03-25 (Wave 8 -- A4 closed, all gaps resolved)
-Repository: devnw/zig/strings (branch: main, commit: 2eb1daf)
-Analyzer: Claude Opus 4.6 (automated quality scoring -- Waves 1-7)
-Overall quality rating: **A-** (all gaps closed or won't-do; zero deferred items remain)
+Last updated: 2026-03-25 (Wave 9 closure -- 0 open items)
+Repository: devnw/zig/strings (branch: main)
+Analyzer: Claude Opus 4.6 (automated quality scoring -- Waves 1-9)
+Overall quality rating: **A** (0 open items)
 
 ---
 
 ## Summary
 
-| Severity | Total | Closed | Partial | Won't Do | Deferred |
-|----------|-------|--------|---------|----------|----------|
-| Critical | 5 | 4 | 0 | 1 | 0 |
-| High | 12 | 12 | 0 | 0 | 0 |
-| Medium | 28 | 23 | 0 | 5 | 0 |
-| Low | 11 | 10 | 0 | 1 | 0 |
-| **Total** | **56** | **49** | **0** | **7** | **0** |
+| Severity | Total | Open | Closed | Partial | Won't Do | Deferred |
+|----------|-------|------|--------|---------|----------|----------|
+| Critical | 5 | 0 | 4 | 0 | 1 | 0 |
+| High | 13 | 0 | 13 | 0 | 0 | 0 |
+| Medium | 28 | 0 | 23 | 0 | 5 | 0 |
+| Low | 12 | 0 | 11 | 0 | 1 | 0 |
+| **Total** | **58** | **0** | **51** | **0** | **7** | **0** |
 
 ### Top Active Risks
 
-None. All items are Closed or Won't Do. Zero open, partial, or deferred items remain.
+No open items.
+
+**Wave 10 closure:** Q-LOC1 (locale data test gap) **Closed** -- added 19 test blocks covering all 22 locale definitions in locale_data.zig.
+
+**Wave 9 updates:** Q-CI1 added and **Closed** (CI cache `default:` directive added to `.gitlab-ci.yml`). RM-4 closed (shared `public_api_imports` constant extracted in build.zig). Q-LOC1 added (locale data test gap). Q-DEP1 skipped (already tracked as S6 in SECURITY_GAP_ANALYSIS.md).
 
 **Wave 8 closure:** A4 (parameter ordering) moved from Deferred to **Closed** -- audited 143 functions, 1 outlier (`ICUString.caseCompare`) fixed. All functions now follow consistent `allocator-first` (standalone) or `self, allocator, ...rest` (methods) convention.
 
@@ -50,7 +54,7 @@ None. All items are Closed or Won't Do. Zero open, partial, or deferred items re
 - **Bare `@intCast` in encoding** (R2) -- Closed (Wave 3, targeted fix). Added codepoint range guard in `encode4ByteGB18030` (`chinese.zig:330`) and `std.math.cast` in `gb18030LinearToUnicode` (`:375`). Remaining ~120 casts verified safe by construction (bounded by table sizes and ASCII guards). Cross-ref: S20 (SECURITY_GAP_ANALYSIS.md) also closed.
 - **Legacy encoding error duplication 4x** (M3) -- Closed (Wave 3). Created shared `LegacyEncodingError` in `src/encoding/legacy/errors.zig`; all 6 files now alias the shared set. Backward-compatible (public names unchanged).
 - **build.zig monolith** (M4) -- Closed (Wave 4). Extracted `addLibModule` and `addLibTest` helper functions; shared import arrays for repeated dependency lists. Reduced from 1,398 to 837 lines (~40% reduction). All tests pass.
-- **Error type duplication** (A1) -- Partial (Wave 4). Analysis confirmed remaining error sets are domain-specific (regex, normalization, encoding, parallel, etc.) with no meaningful duplication after M3 consolidated legacy encoding errors. No further consolidation warranted.
+- **Error type duplication** (A1) -- Closed (Wave 7). Analysis confirmed remaining error sets are domain-specific (regex, normalization, encoding, parallel, etc.) with no meaningful duplication after M3 consolidated legacy encoding errors. No further consolidation warranted.
 - **Regex VM stack overflow** (R4) -- Closed. Added `MAX_RECURSION_DEPTH=500` to `matchAt()`. The recursive `split` opcode handler now checks recursion depth before recursing; returns null (no match) when the limit is exceeded. Prevents stack overflow on deeply nested patterns (e.g., 200+ nested quantified groups). Two new tests added: deeply nested group test and pathological split chain test. `regex.zig:1038,1048,1273-1281`.
 - **49 pub fns lack doc comments** (Q27) -- Closed (Wave 4). All 49 undocumented pub fns now have `///` doc comments across 15 files (iterator.zig, latin1.zig, search.zig, grapheme.zig, utf8.zig, utf16.zig, utf32.zig, word.zig, sentence.zig, line_break.zig, phonetic.zig, lazy_norm.zig, mmap.zig, rope.zig, icu.zig, parallel.zig, regex.zig).
 - **No ADRs** (D3) -- Closed (Wave 4). Created 5 ADRs in `docs/adr/`: ADR-001 (SIMD architecture), ADR-002 (parallel thresholds), ADR-003 (unicode tables), ADR-004 (error handling), ADR-005 (normalization strategy).
@@ -65,7 +69,7 @@ None. All items are Closed or Won't Do. Zero open, partial, or deferred items re
 
 ## Findings
 
-Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findings prefixed R/A/M/D. Phase 4 findings: Q46-Q49. Phase 3 quality review findings: AC-1 through AC-4, RE-3, RM-1, RM-4.
+Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findings prefixed R/A/M/D. Phase 4 findings: Q46-Q49. Phase 3 quality review findings: AC-1 through AC-4, RE-3, RM-1, RM-4. Wave 9 findings: Q-CI1, Q-LOC1.
 
 | Rank | ID | Severity | PriorityScore | Category | Finding | Component | Issue | Effort | Status |
 |------|----|----------|---------------|----------|---------|-----------|-------|--------|--------|
@@ -119,12 +123,14 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 48 | R5 | Low | 28 | architecture | `parallel.getPool()` never frees unless `deinitPool()` called | `src/parallel.zig:9-15` | [#77](https://gitlab.com/devnw/zig/strings/-/issues/77) | S | Closed |
 | 49 | A4 | Low | 24 | api-contract | Inconsistent parameter ordering (allocator first vs last) -- 1 outlier fixed: `ICUString.caseCompare` | `src/extended/icu.zig` | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | M | **Closed** |
 | 50 | Q24 | Low | 20 | cleanup | 3 files fail `zig fmt --check` | Multiple | [#36](https://gitlab.com/devnw/zig/strings/-/issues/36) | S | Closed |
-| 51 | RM-4 | Low | 19.2 | maintainability | Duplicate import lists for `strings_mod` and `zigstr_mod` in build.zig (65 identical lines) | `build.zig:421-554` | -- | S | **Closed** |
+| 51 | RM-4 | Low | 25.6 | maintainability | Duplicate import lists for `strings_mod` and `zigstr_mod` in build.zig (65 identical lines) -- fixed: shared `const public_api_imports` array extracted and referenced by both modules | `build.zig:444-520` | -- | S | **Closed** |
 | 52 | D5 | Low | 16 | docs | Unicode version inconsistency (15.0 vs 15.1) in docs | `src/lib.zig:17` | [#82](https://gitlab.com/devnw/zig/strings/-/issues/82) | S | Closed |
 | 53 | D3 | Low | 16 | docs | No Architecture Decision Records for key design decisions | N/A | [#84](https://gitlab.com/devnw/zig/strings/-/issues/84) | M | Closed |
 | 54 | Q23 | Low | 15 | cleanup | Redundant `char_class_negated` opcode | `src/extended/regex.zig:81-82` | -- | S | Closed |
 | 55 | RM-1 | Low | 12.8 | maintainability | Duplicate lookup-table builders in manipulation.zig:26 and search.zig:20 -- semantic differences; ~15 lines not worth coupling | `src/ops/manipulation.zig:26`, `src/ops/search.zig:20` | -- | S | **Won't Do** |
 | 56 | Q22 | Low | 12.8 | cleanup | `phoneticMatchAlloc` zero callers (confirmed) | `src/extended/phonetic.zig:604` | [#42](https://gitlab.com/devnw/zig/strings/-/issues/42) | S | Closed |
+| 57 | Q-CI1 | High | 32.0 | ci-cd | ~~Missing CI cache configuration~~ -- added `default: cache:` with `key: "zig-${ZIG_VERSION}"`, `paths: ["zig-${ZIG_VERSION}/"]`; all jobs inherit via GitLab `default` keyword | `.gitlab-ci.yml` | -- | S | **Closed** |
+| 58 | Q-LOC1 | Low | 19.2 | tests | locale_data.zig defines 22 locale constants but only 3 (en_US, de_DE, fr_FR) were exercised by tests; added 19 new test blocks covering all remaining locales (en_GB, en_AU, en_CA, es_ES, it_IT, pt_BR, pt_PT, nl_NL, pl_PL, ru_RU, zh_CN, zh_TW, ja_JP, ko_KR, ar_SA, he_IL, hi_IN, tr_TR, root) plus an exhaustive `all locale IDs resolve via Locale.get` test | `src/extended/locale.zig` | -- | S | **Closed** |
 
 ---
 
@@ -154,21 +160,29 @@ Inconsistencies in the public API. **New findings from Phase 3 quality review:**
 Code duplication and organizational issues. **New findings from Phase 3 quality review:**
 
 - **RM-1 (LOW):** `buildAsciiLookup` in `manipulation.zig:26` and `buildCodepointLookup`/`buildByteLookup` in `search.zig:20` are near-duplicate lookup-table builders. `buildAsciiLookup` iterates UTF-8 codepoints; `buildCodepointLookup` iterates a `Codepoint` slice. Both produce the same `struct { table: [256]bool, all_ascii: bool }`. **Status: Won't Do (Wave 4).** The functions differ semantically (UTF-8 input with decoding vs raw codepoint/byte input). Deduplication would require either a cross-module dependency or a new shared utility module. The ~15 lines of duplication do not justify that coupling.
-- **RM-4 (LOW):** `strings_mod` and `zigstr_mod` in `build.zig:421-554` declare identical 65-line import lists. **Status: Closed (2026-03-24).** Extracted a shared `const public_api_imports` array referenced by both module declarations. Both modules now use `imports = &public_api_imports`.
+- **RM-4 (LOW):** `strings_mod` and `zigstr_mod` in `build.zig` declared identical 60-line import lists. **Status: Closed (2026-03-25).** Extracted shared `const public_api_imports` array at line 444; both `zigstr_mod` and `strings_mod` now reference `&public_api_imports`. Net reduction: ~60 duplicate lines eliminated. Verified by `zig build test --summary all` (105/105 tests passed).
 
-**Previously resolved:** UnicodeCategory duplication (`M1`) removed. Legacy encoding error duplication (`M3`) consolidated. build.zig (`M4`) refactored with helpers. Error type duplication (`A1`) analyzed -- remaining sets domain-specific (Partial).
+**Previously resolved:** UnicodeCategory duplication (`M1`) removed. Legacy encoding error duplication (`M3`) consolidated. build.zig (`M4`) refactored with helpers. Error type duplication (`A1`) analyzed -- remaining sets domain-specific (Closed, Wave 7).
 
-### Tests (Q5, Q14, Q26, M6, R7, RE-3)
+### Tests (Q5, Q14, Q26, M6, R7, RE-3, Q-LOC1)
 
-**New finding from Phase 3 quality review:**
+**New finding (Wave 9):**
+
+- ~~**Q-LOC1 (LOW):**~~ **Closed.** Added 19 test blocks to `src/extended/locale.zig` covering all previously untested locales: en_GB, en_AU, en_CA, es_ES, it_IT, pt_BR, pt_PT, nl_NL, pl_PL, ru_RU, zh_CN, zh_TW, ja_JP, ko_KR, ar_SA, he_IL, hi_IN, tr_TR, root. Tests verify `formatNumber` output (decimal/group separators), `formatList` connectors (including Unicode: CJK, Cyrillic, Arabic, Hebrew, Devanagari), AM/PM designators, language/region codes, `hour_24` flags, `group_size` (Indian numbering), and currency formatting (JPY, KRW, BRL, TRY). An exhaustive `all locale IDs resolve via Locale.get` test ensures every `LocaleId` variant returns a valid `Locale`.
+
+**Previously resolved from Phase 3 quality review:**
 
 - ~~**RE-3 (MEDIUM):**~~ **Closed (Wave 4).** Cross-string phonetic assertions added to `phonetic.zig`. Tests now verify phonetically similar but lexically different strings, not just self-equality.
 
 **Previously resolved:** Regex test coverage expanded to 39 tests (Q5 closed). lib.zig test block (`M6`) now imports all public modules -- Closed. Parallel module tests (`R7`) now include tests above parallel thresholds -- Closed.
 
-### CI/CD (Q18, Q25, Q47, M7)
+### CI/CD (Q18, Q25, Q47, M7, Q-CI1)
 
 CI pipeline runs `test` and `test-integration` but omits `test-comprehensive` and `test-all` (`Q47`). This means 208 tests across 5 comprehensive test files only execute locally. `Q47` was Closed in Wave 2. Makefile fmt target (`M7`) now includes bench/ and examples/ -- Closed.
+
+**Wave 9 finding (Closed):**
+
+- ~~**Q-CI1 (HIGH):**~~ **Closed.** Added `default: cache:` directive to `.gitlab-ci.yml` with `key: "zig-${ZIG_VERSION}"` and `paths: ["zig-${ZIG_VERSION}/"]`. All jobs now inherit the cache via the GitLab `default` keyword, eliminating redundant ~70 MB toolchain downloads across 12+ jobs per pipeline.
 
 ### Documentation (D1, D2, D3, D5, Q27)
 
@@ -192,7 +206,9 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 | ~~AC-4~~ | ~~`maxInt(usize)` sentinel undocumented~~ | -- | ~~Add doc comments explaining error sentinel~~ **Closed** (parallel.zig:219,342) |
 | ~~RE-3~~ | ~~Phonetic match tests trivially pass~~ | -- | ~~Add cross-string assertions~~ **Closed** (phonetic.zig) |
 | RM-1 | ~~Duplicate lookup-table builders~~ | -- | ~~Extract shared utility~~ **Won't Do** (functions differ semantically; ~15 lines duplication does not justify cross-module coupling) |
-| RM-4 | ~~Duplicate import lists in build.zig~~ | -- | ~~Extract shared `const common_imports` array~~ **Closed** |
+| RM-4 | ~~Duplicate import lists in build.zig~~ | -- | ~~Extract shared `const public_api_imports` array~~ **Closed** (build.zig:444-520) |
+| Q-CI1 | ~~Missing CI cache for Zig toolchain~~ | -- | ~~Add `cache:` directive to `.gitlab-ci.yml`~~ **Closed** (added `default: cache:` with key `zig-${ZIG_VERSION}`) |
+| ~~Q-LOC1~~ | ~~locale_data.zig -- 7+ locale definitions untested~~ | -- | ~~Add tests for all untested locale format strings~~ **Closed** (19 test blocks added to locale.zig) |
 | Q46 | ~~ASCII category misclassification~~ | -- | ~~Split `'!'...'/'` range~~ **Closed** |
 | Q47 | ~~CI omits test-comprehensive~~ | -- | ~~Add `test-comprehensive` job to `.gitlab-ci.yml`~~ **Closed** |
 | A5 | ~~concat() overflow~~ | [#62](https://gitlab.com/devnw/zig/strings/-/issues/62) | ~~Add `std.math.add` for length accumulation~~ **Closed** |
@@ -219,7 +235,7 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 | Q49 | ~~All files now under 800-line limit~~ | -- | ~~All oversized files split into sub-modules~~ **Closed** (regex.zig, manipulation.zig, normalization.zig, simd.zig, phonetic.zig, locale.zig) |
 | R7 | ~~Parallel module test gaps~~ | [#79](https://gitlab.com/devnw/zig/strings/-/issues/79) | ~~Add tests above parallel thresholds~~ **Closed** |
 | A2 | ~~getCurrencyFormat ignores locale~~ | [#74](https://gitlab.com/devnw/zig/strings/-/issues/74) | ~~Document limitation~~ **Closed** |
-| A1 | ~~Inconsistent error types~~ | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | ~~Merge shared variants~~ **Partial** (remaining sets are domain-specific; M3 addressed actual duplication) |
+| A1 | ~~Inconsistent error types~~ | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | ~~Merge shared variants~~ **Closed** (remaining sets are domain-specific; M3 addressed actual duplication) |
 | Q5 | ~~Regex test coverage~~ | [#38](https://gitlab.com/devnw/zig/strings/-/issues/38) | ~~Expand to 30+ targeted tests~~ **Closed** (39 tests) |
 | A4 | ~~Inconsistent parameter ordering~~ | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | ~~Audit and align API conventions~~ **Closed** (143 functions audited; 1 outlier `ICUString.caseCompare` fixed) |
 | D3 | ~~No ADRs~~ | [#84](https://gitlab.com/devnw/zig/strings/-/issues/84) | ~~Create ADRs for top 5 design decisions~~ **Closed** |
@@ -286,6 +302,9 @@ Maximum possible score: 5 x 5 x 5 x 1.6 = 200. Practical range: 1.6 -- 200.
 - **confidence::confirmed** -- Q27 (re-scored): 49 pub fns confirmed lacking doc comments (up from ~40 in Phase 3).
 - **confidence::confirmed** -- M3 (re-scored): 4x error type duplication confirmed across legacy encoding files.
 - **confidence::confirmed** -- M4 (re-scored): build.zig confirmed at 1,370 lines (was 1,352 in Phase 3 due to additions).
+- **confidence::confirmed** -- Q-CI1: verified by reading `.gitlab-ci.yml`. Zero `cache:` directives present. The `.install-zig` YAML anchor (lines 35-73) downloads Zig on every invocation; the conditional `if [ ! -f "zig-${ZIG_VERSION}/zig" ]` only helps within a single job, not across jobs, because each job starts with a clean workspace. 12 jobs reference `*install-zig`.
+- **confidence::confirmed** -- RM-4 (closed): shared `const public_api_imports` array extracted at `build.zig:444`; both `zigstr_mod` (line 507) and `strings_mod` (line 515) reference `&public_api_imports`. Verified by `zig build test --summary all` (105/105 passed).
+- **confidence::confirmed** -- Q-LOC1: verified by grepping test blocks in `locale.zig`. Only `Locale.get(.en_US)`, `Locale.get(.de_DE)`, and `Locale.get(.fr_FR)` appear in test code. The remaining 19 locale definitions in `locale_data.zig` (en_GB, en_AU, en_CA, es_ES, it_IT, pt_BR, pt_PT, nl_NL, pl_PL, ru_RU, zh_CN, zh_TW, ja_JP, ko_KR, ar_SA, he_IL, hi_IN, tr_TR, root_locale) have zero direct test invocations.
 - **confidence::confirmed** -- All other findings verified by reading source code at commit b66264f.
 
 ---
@@ -301,8 +320,15 @@ Maximum possible score: 5 x 5 x 5 x 1.6 = 200. Practical range: 1.6 -- 200.
 | AC-2 | 3 (wrong phonetic code for G+N) | 3 (metaphone users with G-words) | 4 (typo; no test targets this branch) | 3 x 3 x 4 x 1.6 | 57.6 |
 | AC-3 | 3 (stub masquerading as real impl) | 3 (double metaphone users) | 4 (no test validates against reference) | 3 x 3 x 4 x 1.6 | 57.6 |
 | AC-4 | 3 (misinterpreted error sentinel) | 3 (parallel edit distance/fuzzy users) | 3 (code review can spot; doc would clarify) | 3 x 3 x 3 x 1.6 | 43.2 |
-| RM-4 | 2 (maintenance burden) | 3 (any new module addition) | 2 (visible in code review) | 2 x 3 x 2 x 1.6 | 19.2 |
+| RM-4 | 2 (maintenance burden) | 4 (any new module addition -- re-scored: both modules always co-edited) | 2 (visible in code review) | 2 x 4 x 2 x 1.6 | 25.6 |
 | RM-1 | 2 (code duplication) | 2 (two files, rarely co-modified) | 2 (code review catches easily) | 2 x 2 x 2 x 1.6 | 12.8 |
+
+### Wave 9 findings (Impact x Frequency x DetectionDifficulty x 1.6)
+
+| ID | Impact | Frequency | DetectDiff | Calculation | PriorityScore |
+|----|--------|-----------|------------|-------------|---------------|
+| Q-CI1 | 4 (wasted CI time, flake risk from network) | 4 (every pipeline, 12 jobs) | 2 (obvious from CI config audit) | 4 x 4 x 2 x 1.6 | 51.2 -> 32.0 (capped: no correctness impact, purely efficiency) |
+| Q-LOC1 | 2 (untested format data) | 3 (locale users) | 2 (visible from test grep) | 2 x 3 x 2 x 1.6 | 19.2 |
 
 ### Phase 4 findings (Impact x Frequency x DetectionDifficulty x 1.6)
 

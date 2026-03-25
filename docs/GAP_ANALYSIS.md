@@ -1,9 +1,9 @@
 # Gap Analysis
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-25 (Wave 8 -- A4 closed)
+**Last updated:** 2026-03-25 (Wave 9 closure -- 0 open gaps, GAP-0035/0036/0037 moved to RESOLVED)
 **Analyzer:** Claude Opus 4.6 (automated gap determination)
-**Branch:** main (commit: dad4272)
+**Branch:** main
 **Scope:** v1.0 readiness assessment
 
 > This file contains ONLY open gaps. Resolved gaps are in [GAP_ANALYSIS_RESOLVED.md](GAP_ANALYSIS_RESOLVED.md).
@@ -13,42 +13,9 @@
 
 ## Gaps
 
-### A1: Error type duplication across modules (Closed)
-- **Issue:** [#39](https://gitlab.com/devnw/zig/strings/-/issues/39)
-- **Category:** Code Quality
-- **Severity:** Medium
-- **Status:** Closed -- no further consolidation warranted. Remaining error sets are domain-specific.
-- **Requirement source:** API consistency and maintainability
-- **Current state (evidence):**
-  - 6+ independent error type definitions across modules (regex, normalization, encoding, parallel, etc.)
-  - Wave 3 closure of M3 consolidated legacy encoding errors into shared `LegacyEncodingError`
-  - Remaining error sets are domain-specific with no meaningful overlap
-  - PriorityScore: 45 (QUALITY_GAP_ANALYSIS.md)
-- **Why this is a gap:** Multiple similar-but-distinct error types reduce API ergonomics, though the remaining duplication is justified by domain separation.
-- **Impact/Risk:** Low -- remaining error sets are appropriately domain-specific.
-- **Recommended fix:** No further action recommended. Remaining error sets serve distinct domains.
-- **Acceptance criteria:**
-  - No new error type duplication introduced in future work
+No open gaps remain. All items have been moved to [GAP_ANALYSIS_RESOLVED.md](GAP_ANALYSIS_RESOLVED.md).
 
-### A4: Inconsistent parameter ordering across API (Closed)
-- **Issue:** [#76](https://gitlab.com/devnw/zig/strings/-/issues/76)
-- **Category:** Code Quality
-- **Severity:** Low
-- **Status:** Closed -- all 143 public allocator-accepting functions now follow consistent ordering.
-- **Requirement source:** API consistency -- allocator-first vs allocator-last convention
-- **Current state (evidence):**
-  - Audited all 143 public allocator-accepting functions
-  - 107 standalone/static functions: allocator-first (Zig stdlib convention) -- already correct
-  - 36 methods: self, allocator, ...rest -- already idiomatic Zig
-  - 1 outlier fixed: `ICUString.caseCompare(self, other, allocator)` reordered to `(self, allocator, other)`
-  - Convention: standalone → allocator-first; methods → self, allocator, ...rest
-  - PriorityScore: 24 (QUALITY_GAP_ANALYSIS.md)
-- **Why this was a gap:** Inconsistent parameter ordering reduces API ergonomics.
-- **Impact/Risk:** Minimal -- only 1 function signature changed (`caseCompare` had no external callers).
-- **Fix applied:** Reordered `ICUString.caseCompare` parameter to `(self, allocator, other)`. All tests pass.
-- **Acceptance criteria:**
-  - All public allocator-accepting functions follow a consistent parameter ordering convention -- MET
-  - Migration guide: N/A -- `caseCompare` had zero callers outside the module
+**Wave 9 closures (2026-03-25):** GAP-0035 (Unicode conformance test vectors), GAP-0036 (thread safety docs), GAP-0037 (cross-platform CI). See RESOLVED file for full details.
 
 ---
 
@@ -62,6 +29,8 @@
 | Low | 0 | -- |
 
 **Total open gaps: 0**
+**Closed (Wave 9):** GAP-0035 (Unicode conformance test vectors -- 33 NormalizationTest.txt + 29 GraphemeBreakTest.txt vectors; also fixed recursive decomposition bug, spacing modifier compat decomps, and GB12/GB13 RI pairing), GAP-0036 (thread safety documentation -- doc comments added to all public parallel.zig functions, ARCHITECTURE.md expanded, README.md updated), GAP-0037 (cross-compilation CI jobs for macOS x86_64/aarch64 and Windows x86_64), RM-4 (duplicate build.zig imports), P-NEW-4 (SIMD countScalar), S25 (parallelCount boundary fix), P-NEW-3 (containsIgnoreCase ASCII fast-path), Q-CI1 (CI cache), Q-LOC1 (locale tests), A4 (parameter ordering), A1 (error type duplication)
+**Won't Do (Wave 9):** S26 (CI component SHA pinning -- GitLab CI does not support SHA-based pinning; first-party control mitigates)
 **Closed (Wave 8):** A4 (parameter ordering -- 1 outlier fixed: `ICUString.caseCompare`)
 **Closed (Wave 7):** A1 (error type duplication -- domain-specific sets justified, no further action)
 
@@ -86,3 +55,5 @@
 | Wave 5 closures | 2026-03-24 | 2026-03-24 | GAP-0001 (Critical), P1-6, P2-10, P3-1 via UCD trie generation (commit dad4272) |
 | Wave 6 closures | 2026-03-24 | 2026-03-24 | P2-3 (streaming normalization), Q49 (file splitting); A1 closed as Partial; A4 deferred; S6/S23/S24 Won't Do |
 | Wave 8 closures | 2026-03-25 | 2026-03-25 | A4 (parameter ordering -- 1 outlier `ICUString.caseCompare` fixed) |
+| GAP-0034 | 2026-03-25 | 2026-03-25 | Duplicate of S6 (Won't Do) -- not added |
+| GAP-0035 through GAP-0037 | 2026-03-25 | 2026-03-25 | Phase 3 audit: GAP-0035 (conformance tests), GAP-0036 (thread safety docs), GAP-0037 (cross-platform CI) -- all Closed in Wave 9 |

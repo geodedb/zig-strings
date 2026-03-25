@@ -120,8 +120,11 @@ pub fn isIndicConsonant(cp: Codepoint) bool {
 pub fn shouldBreak(prev: ?Codepoint, curr: Codepoint, state: *GraphemeState) bool {
     const curr_prop = getGraphemeBreak(curr);
 
-    // GB1: Break at start of text
+    // GB1: Break at start of text (or start of a new cluster in the iterator).
+    // Reset RI parity so that consecutive RI pairs are counted correctly
+    // across cluster boundaries (GB12/GB13).
     if (prev == null) {
+        state.ri_odd = false;
         updateStateWithCodepoint(state, curr_prop, curr);
         return true;
     }

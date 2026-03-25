@@ -439,72 +439,76 @@ pub fn build(b: *std.Build) void {
     // Main Public API Modules
     // ============================================================
 
+    // Shared imports for all public API entry points (zigstr and strings).
+    // Defined once to avoid maintaining two identical ~60-line import lists.
+    const public_api_imports = [_]std.Build.Module.Import{
+        // Core types
+        .{ .name = "types", .module = types_mod },
+        .{ .name = "codepoint", .module = codepoint_mod },
+        // Encodings
+        .{ .name = "utf8", .module = utf8_mod },
+        .{ .name = "utf16", .module = utf16_mod },
+        .{ .name = "utf32", .module = utf32_mod },
+        .{ .name = "ascii", .module = ascii_mod },
+        .{ .name = "latin1", .module = latin1_mod },
+        // Unicode
+        .{ .name = "categories", .module = categories_mod },
+        .{ .name = "normalization", .module = normalization_mod },
+        .{ .name = "grapheme", .module = grapheme_mod },
+        .{ .name = "word", .module = word_mod },
+        .{ .name = "sentence", .module = sentence_mod },
+        .{ .name = "case", .module = case_mod },
+        .{ .name = "collation", .module = collation_mod },
+        .{ .name = "scripts", .module = scripts_mod },
+        .{ .name = "line_break", .module = line_break_mod },
+        .{ .name = "bidi", .module = bidi_mod },
+        .{ .name = "identifier", .module = identifier_mod },
+        // Encoding utilities
+        .{ .name = "detection", .module = detection_mod },
+        .{ .name = "bom", .module = bom_mod },
+        .{ .name = "transcoding", .module = transcoding_mod },
+        // Iterators
+        .{ .name = "iterator", .module = iterator_mod },
+        // Operations
+        .{ .name = "search", .module = search_mod },
+        .{ .name = "comparison", .module = comparison_mod },
+        .{ .name = "manipulation", .module = manipulation_mod },
+        // Conversion
+        .{ .name = "numeric", .module = numeric_mod },
+        .{ .name = "formatting", .module = formatting_mod },
+        // String types
+        .{ .name = "string", .module = string_mod },
+        .{ .name = "string16", .module = string16_mod },
+        .{ .name = "builder", .module = builder_mod },
+        // Utilities
+        .{ .name = "simd", .module = simd_mod },
+        .{ .name = "pool", .module = pool_mod },
+        .{ .name = "rope", .module = rope_mod },
+        .{ .name = "mmap", .module = mmap_mod },
+        .{ .name = "lazy_norm", .module = lazy_norm_mod },
+        // Extended features
+        .{ .name = "regex", .module = regex_mod },
+        .{ .name = "fuzzy", .module = fuzzy_mod },
+        .{ .name = "phonetic", .module = phonetic_mod },
+        .{ .name = "locale", .module = locale_mod },
+        .{ .name = "icu", .module = icu_mod },
+        // Legacy encodings
+        .{ .name = "windows_codepage", .module = windows_codepage_mod },
+        .{ .name = "iso8859", .module = iso8859_mod },
+        .{ .name = "chinese_encoding", .module = chinese_encoding_mod },
+        .{ .name = "japanese_encoding", .module = japanese_encoding_mod },
+        .{ .name = "korean_encoding", .module = korean_encoding_mod },
+        .{ .name = "big5", .module = big5_mod },
+        // Parallel operations
+        .{ .name = "parallel", .module = parallel_mod },
+    };
+
     // zigstr.zig - New unified entry point
     const zigstr_mod = b.addModule("zigstr", .{
         .root_source_file = b.path("src/zigstr.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            // Core types
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            // Encodings
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "utf32", .module = utf32_mod },
-            .{ .name = "ascii", .module = ascii_mod },
-            .{ .name = "latin1", .module = latin1_mod },
-            // Unicode
-            .{ .name = "categories", .module = categories_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "word", .module = word_mod },
-            .{ .name = "sentence", .module = sentence_mod },
-            .{ .name = "case", .module = case_mod },
-            .{ .name = "collation", .module = collation_mod },
-            .{ .name = "scripts", .module = scripts_mod },
-            .{ .name = "line_break", .module = line_break_mod },
-            .{ .name = "bidi", .module = bidi_mod },
-            .{ .name = "identifier", .module = identifier_mod },
-            // Encoding utilities
-            .{ .name = "detection", .module = detection_mod },
-            .{ .name = "bom", .module = bom_mod },
-            .{ .name = "transcoding", .module = transcoding_mod },
-            // Iterators
-            .{ .name = "iterator", .module = iterator_mod },
-            // Operations
-            .{ .name = "search", .module = search_mod },
-            .{ .name = "comparison", .module = comparison_mod },
-            .{ .name = "manipulation", .module = manipulation_mod },
-            // Conversion
-            .{ .name = "numeric", .module = numeric_mod },
-            .{ .name = "formatting", .module = formatting_mod },
-            // String types
-            .{ .name = "string", .module = string_mod },
-            .{ .name = "string16", .module = string16_mod },
-            .{ .name = "builder", .module = builder_mod },
-            // Utilities
-            .{ .name = "simd", .module = simd_mod },
-            .{ .name = "pool", .module = pool_mod },
-            .{ .name = "rope", .module = rope_mod },
-            .{ .name = "mmap", .module = mmap_mod },
-            .{ .name = "lazy_norm", .module = lazy_norm_mod },
-            // Extended features
-            .{ .name = "regex", .module = regex_mod },
-            .{ .name = "fuzzy", .module = fuzzy_mod },
-            .{ .name = "phonetic", .module = phonetic_mod },
-            .{ .name = "locale", .module = locale_mod },
-            .{ .name = "icu", .module = icu_mod },
-            // Legacy encodings
-            .{ .name = "windows_codepage", .module = windows_codepage_mod },
-            .{ .name = "iso8859", .module = iso8859_mod },
-            .{ .name = "chinese_encoding", .module = chinese_encoding_mod },
-            .{ .name = "japanese_encoding", .module = japanese_encoding_mod },
-            .{ .name = "korean_encoding", .module = korean_encoding_mod },
-            .{ .name = "big5", .module = big5_mod },
-            // Parallel operations
-            .{ .name = "parallel", .module = parallel_mod },
-        },
+        .imports = &public_api_imports,
     });
 
     // lib.zig - Legacy entry point (re-exports for compatibility)
@@ -512,67 +516,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            // Core types
-            .{ .name = "types", .module = types_mod },
-            .{ .name = "codepoint", .module = codepoint_mod },
-            // Encodings
-            .{ .name = "utf8", .module = utf8_mod },
-            .{ .name = "utf16", .module = utf16_mod },
-            .{ .name = "utf32", .module = utf32_mod },
-            .{ .name = "ascii", .module = ascii_mod },
-            .{ .name = "latin1", .module = latin1_mod },
-            // Unicode
-            .{ .name = "categories", .module = categories_mod },
-            .{ .name = "normalization", .module = normalization_mod },
-            .{ .name = "grapheme", .module = grapheme_mod },
-            .{ .name = "word", .module = word_mod },
-            .{ .name = "sentence", .module = sentence_mod },
-            .{ .name = "case", .module = case_mod },
-            .{ .name = "collation", .module = collation_mod },
-            .{ .name = "scripts", .module = scripts_mod },
-            .{ .name = "line_break", .module = line_break_mod },
-            .{ .name = "bidi", .module = bidi_mod },
-            .{ .name = "identifier", .module = identifier_mod },
-            // Encoding utilities
-            .{ .name = "detection", .module = detection_mod },
-            .{ .name = "bom", .module = bom_mod },
-            .{ .name = "transcoding", .module = transcoding_mod },
-            // Iterators
-            .{ .name = "iterator", .module = iterator_mod },
-            // Operations
-            .{ .name = "search", .module = search_mod },
-            .{ .name = "comparison", .module = comparison_mod },
-            .{ .name = "manipulation", .module = manipulation_mod },
-            // Conversion
-            .{ .name = "numeric", .module = numeric_mod },
-            .{ .name = "formatting", .module = formatting_mod },
-            // String types
-            .{ .name = "string", .module = string_mod },
-            .{ .name = "string16", .module = string16_mod },
-            .{ .name = "builder", .module = builder_mod },
-            // Utilities
-            .{ .name = "simd", .module = simd_mod },
-            .{ .name = "pool", .module = pool_mod },
-            .{ .name = "rope", .module = rope_mod },
-            .{ .name = "mmap", .module = mmap_mod },
-            .{ .name = "lazy_norm", .module = lazy_norm_mod },
-            // Extended features
-            .{ .name = "regex", .module = regex_mod },
-            .{ .name = "fuzzy", .module = fuzzy_mod },
-            .{ .name = "phonetic", .module = phonetic_mod },
-            .{ .name = "locale", .module = locale_mod },
-            .{ .name = "icu", .module = icu_mod },
-            // Legacy encodings
-            .{ .name = "windows_codepage", .module = windows_codepage_mod },
-            .{ .name = "iso8859", .module = iso8859_mod },
-            .{ .name = "chinese_encoding", .module = chinese_encoding_mod },
-            .{ .name = "japanese_encoding", .module = japanese_encoding_mod },
-            .{ .name = "korean_encoding", .module = korean_encoding_mod },
-            .{ .name = "big5", .module = big5_mod },
-            // Parallel operations
-            .{ .name = "parallel", .module = parallel_mod },
-        },
+        .imports = &public_api_imports,
     });
 
     // ============================================================
@@ -763,10 +707,18 @@ pub fn build(b: *std.Build) void {
     const test_comprehensive_step = b.step("test-comprehensive", "Run comprehensive test suite");
 
     test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/unicode_conformance.zig", &strings_import)).step);
+    test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/unicode_conformance_vectors.zig", &strings_import)).step);
     test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/encoding_roundtrip.zig", &strings_import)).step);
     test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/edge_cases.zig", &strings_import)).step);
     test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/extended_features.zig", &strings_import)).step);
     test_comprehensive_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/legacy_encodings.zig", &strings_import)).step);
+
+    // ============================================================
+    // Unicode Conformance Test Vectors (GAP-0035)
+    // ============================================================
+
+    const test_conformance_step = b.step("test-conformance", "Run Unicode conformance test vectors (NormalizationTest.txt, GraphemeBreakTest.txt)");
+    test_conformance_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "tests/unicode_conformance_vectors.zig", &strings_import)).step);
 
     // ============================================================
     // ZigStr Module Tests
@@ -792,6 +744,7 @@ pub fn build(b: *std.Build) void {
     test_all_step.dependOn(test_integration_step);
     test_all_step.dependOn(test_zigstr_step);
     test_all_step.dependOn(test_comprehensive_step);
+    test_all_step.dependOn(test_conformance_step);
 
     // ============================================================
     // Benchmarks

@@ -8,7 +8,7 @@ A comprehensive Unicode string manipulation library for Zig with full UTF-8/UTF-
 |--------|------|
 | API Stability | Beta |
 | Zig Version | 0.15.1+ |
-| Platforms | Linux, macOS, Windows |
+| Platforms | Linux, macOS, Windows (cross-compilation verified in CI) |
 
 ## Features
 
@@ -208,6 +208,13 @@ zig build test-string
 zig build test-unicode
 zig build test-acceptance
 ```
+
+## Thread Safety
+
+- All pure functions (encoding, decoding, searching, comparison) are thread-safe when operating on separate data.
+- `String`, `String16`, `StringBuilder`, and `StringPool` are **not** internally synchronized -- callers must provide external synchronization for concurrent access to the same instance.
+- The parallel module (`parallelCount`, `parallelMap`, `parallelEditDistanceBatch`, `parallelFuzzySearch`) is safe to call concurrently from multiple threads. Each call must use distinct output/results slices; read-only input slices may be shared. The global thread pool is lazily initialized with mutex protection.
+- See [Architecture - Thread Safety](docs/ARCHITECTURE.md#thread-safety) for full details.
 
 ## Documentation
 

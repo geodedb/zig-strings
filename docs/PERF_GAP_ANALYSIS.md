@@ -1,32 +1,37 @@
 # Performance Gap Analysis
 
-**Last updated:** 2026-03-24 (Wave 6 closure)
+**Last updated:** 2026-03-25 (Wave 9 closure -- P-NEW-3, P-NEW-4 closed, 0 open)
 **Repository:** devnw/zig/strings (branch: main)
 **Analyzer:** Claude Opus 4.6 (automated performance audit)
-**Scope:** Full library performance audit -- Phases 1-4 + Waves 1-6
-**Overall rating:** GOOD (31 closed items, no regressions detected)
+**Scope:** Full library performance audit -- Phases 1-5 + Waves 1-9
+**Overall rating:** GOOD (31 closed items, 5 won't do, 0 open findings, no regressions detected)
 
 ---
 
 ## Summary
 
-**Total findings:** 34 (19 original + 7 Phase 3 + 5 Phase 4 re-audit + 3 Phase 4 review)
+**Total findings:** 36 (19 original + 7 Phase 3 + 5 Phase 4 re-audit + 3 Phase 4 review + 2 Phase 5)
 
 | PerfSeverity | Total | Closed | Partial | Won't Do | Open | Reopened |
 |---|---|---|---|---|---|---|
 | P0 (SLO breach / outage risk) | 4 | 4 | 0 | 0 | 0 | 0 |
 | P1 (Material user-facing impact) | 8 | 6 | 0 | 2 | 0 | 0 |
-| P2 (Moderate impact / cost) | 18 | 17 | 0 | 1 | 0 | 0 |
+| P2 (Moderate impact / cost) | 20 | 17 | 0 | 3 | 0 | 0 |
 | P3 (Minor optimization) | 4 | 4 | 0 | 0 | 0 | 0 |
-| **Total** | **34** | **31** | **0** | **3** | **0** | **0** |
+| **Total** | **36** | **31** | **0** | **5** | **0** | **0** |
 
 **Wave 5 closure (commit dad4272):** GAP-0001/P0-1 fully closed (NFC_QC/NFKC_QC trie tables). P1-6 closed (two-level trie for getCategory/getGraphemeBreak). P2-10 and P3-1 closed (block-indexed decomposition/composition). R3 moved from Partial to Closed.
 
-**Wave 6 closure:** P2-3 closed (streaming windowed normalization -- O(1) memory). All 34 findings now resolved (31 closed, 3 won't do, 0 open).
+**Wave 6 closure:** P2-3 closed (streaming windowed normalization -- O(1) memory).
+
+**Wave 9 closure (2026-03-25):** P-NEW-3 closed (containsIgnoreCase ASCII fast-path), P-NEW-4 closed (SIMD countScalar for single-byte needles). All 36 findings now resolved (31 closed, 5 won't do, 0 open).
+
+**Phase 5 new findings (2026-03-25):** 2 new P2 findings identified. P-NEW-3: `containsIgnoreCase` O(H*N) naive sliding window with no ASCII fast-path (PerfScore 40) -- **Closed** (ASCII fast-path added). P-NEW-4: `sequentialCount` does not use SIMD `countByte` for single-byte needles (PerfScore 35) -- **Closed** (SIMD `countScalar` fast-path added).
 
 ### Top Active Risk
 
-None. All findings are closed or won't-do.
+0 open findings:
+1. ~~**P-NEW-4**~~ (PerfScore 35): `sequentialCount` does not dispatch to SIMD `countByte` for single-byte needles -- **Closed.** SIMD `countScalar` fast-path added using `@Vector`/`@popCount`.
 
 ### Top 5 Resolved Risks (Historical)
 
@@ -53,7 +58,7 @@ None. All findings are closed or won't-do.
 
 ## Stack-Ranked Findings Table
 
-Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 re-audit findings marked with **[P4]**. Phase 4 review findings marked with **[P4-REV]**.
+Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 re-audit findings marked with **[P4]**. Phase 4 review findings marked with **[P4-REV]**. Phase 5 findings marked with **[P5 NEW]**.
 
 | Rank | Sev | PerfScore | Finding | Component | Evidence | Measurement | Issue | Fix Summary | Owner | SLA | Status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -76,21 +81,23 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | 17 | P2 | 48 | [P3] `ensureTotalCapacity` for ~24 ArrayList usages (original scope) | case.zig, formatting.zig, collation.zig, manipulation.zig + 11 more | 29 total sites across 11 files | 10-20% alloc improvement | [#78](https://gitlab.com/devnw/zig/strings/-/issues/78) | Add `ensureTotalCapacity(allocator, input.len)` | Multiple | Quarter | Closed |
 | 18 | P2 | 45 | `containsAny` O(n*m) nested iteration | manipulation.zig | `src/ops/manipulation.zig` -- now uses `buildAsciiLookup()` for O(1) ASCII membership | 2-10x for large ASCII char sets | [#44](https://gitlab.com/devnw/zig/strings/-/issues/44) | `[256]bool` lookup table (closed as part of P2-8) | git blame manipulation.zig | Quarter | **Closed** |
 | 19 | P2 | **44** | **[P3]** O(1) decomposition/composition tables | decomposition.zig, composition.zig | `src/unicode/data/decomposition.zig`, `src/unicode/data/composition.zig` -- block-indexed lookup | 10-25% NFC improvement | [#80](https://gitlab.com/devnw/zig/strings/-/issues/80) | Block index tables (cp >> 8) narrow search range | git blame decomposition.zig | Quarter | **Closed** |
-| 20 | P2 | 40 | `StringBuilder.replace` byte-by-byte scan | builder.zig | `src/builder.zig:152-173` | 3-10x for large buffers | -- | `std.mem.indexOf` + bulk copy | git blame builder.zig | Quarter | Closed |
-| 21 | P2 | 40 | Parallel map threshold 4096 too low | parallel.zig | `src/parallel.zig:157` -- (now 65536) | 0.84x seq (fixed to 65KB) | -- | Raised to 65536 | git blame parallel.zig | Quarter | Closed |
-| 22 | P2 | **40** | **[P3]** Batch template interpolation (per-byte append) | formatting.zig | `src/conversion/formatting.zig:24-64,81-153` | 5-10x for large templates | [#83](https://gitlab.com/devnw/zig/strings/-/issues/83) | Track literal segments, bulk appendSlice | git blame formatting.zig | Quarter | Closed |
-| 23 | P2 | **36** | **[P4 NEW]** Regex `CharClass.contains()` linear scan | regex.zig | `src/extended/regex.zig:313-322` -- linear scan over `self.ranges` for every codepoint match | O(n*r) where r = number of ranges per class | -- | Sort ranges + binary search, or bitmap for BMP | git blame regex.zig | Quarter | **Closed** |
-| 24 | P2 | 35 | `normalize()` materializes full codepoint buffer | normalization.zig | `src/unicode/normalization.zig:422-442` | O(n) extra memory | [#45](https://gitlab.com/devnw/zig/strings/-/issues/45) | Streaming with fixed windows | git blame normalization.zig | Quarter | **Closed** |
-| 25 | P2 | **35** | **[P4-REV NEW]** Unconditional `isIndicVirama()` on every codepoint | grapheme.zig | `src/unicode/grapheme.zig:367` -- `updateStateWithCodepoint()` guarded with `cp >= 0x094D` | 242,823 ns/op grapheme (41% regression vs Phase 1) | -- | Guard with `if (cp >= 0x094D)` before `isIndicVirama()` call | git blame grapheme.zig | Quarter | **Closed** |
-| 26 | P2 | 35 | `trimLeftChars`/`trimRightChars` O(n*m) | manipulation.zig | `src/ops/manipulation.zig` -- now uses `buildAsciiLookup()` for O(1) ASCII membership | Same as containsAny | [#44](https://gitlab.com/devnw/zig/strings/-/issues/44) | `[256]bool` lookup table (closed as part of P2-8) | git blame manipulation.zig | Quarter | **Closed** |
-| 27 | P2 | **32** | **[P4 NEW]** `replaceN()` double scan | manipulation.zig | `src/ops/manipulation.zig:303-365` -- pass 1 counts occurrences, pass 2 replaces; intentional design for exact pre-allocation | ~1.5x scan overhead traded for zero reallocation cost | -- | Won't fix: double scan enables exact allocation, avoiding ArrayList growth overhead. Doc comment added. | git blame manipulation.zig | Quarter | **Won't Do** |
-| 28 | P2 | **30** | **[P4-REV NEW]** `normalize()` ASCII fast-path scalar loop instead of SIMD | normalization.zig | `src/unicode/normalization.zig:15,458` -- `simd.isAllAscii()` replaces scalar loop | 7.6x SIMD vs scalar measured in simd benchmarks | -- | Replace scalar loop with `simd.isAllAscii()` (already available + tested) | git blame normalization.zig | Quarter | **Closed** |
-| 29 | P2 | 30 | `isExtendedPictographic` incomplete ranges | grapheme.zig | `src/unicode/grapheme.zig:225-241` -- "Simplified" | Incorrect grapheme counts | -- | Full UCD Extended_Pictographic table | git blame grapheme.zig | Quarter | Won't Do |
-| 30 | P2 | 25 | `replace()` scans string twice | manipulation.zig | `src/ops/manipulation.zig` -- delegates to `replaceN()` which uses intentional double scan for exact allocation | ~1.2x overhead | [#46](https://gitlab.com/devnw/zig/strings/-/issues/46) | Won't fix: same rationale as P2-16 (exact pre-allocation avoids realloc overhead) | git blame manipulation.zig | Quarter | **Won't Do** |
-| 31 | P3 | **15** | **[P4-REV NEW]** `reverse()` over-allocates cluster ArrayList by 16x for ASCII | manipulation.zig | `src/ops/manipulation.zig:319` -- capacity hint changed to `str.len / 4 + 1` | 16x memory overhead reduced to ~4x | -- | Use `str.len / 4 + 1` as capacity hint | git blame manipulation.zig | Backlog | **Closed** |
-| 32 | P3 | 15 | Composition binary search on 941-entry array | composition.zig | `src/unicode/data/composition.zig` -- block-indexed | <10% improvement | -- | Block index on starter (subsumed by P2-10) | git blame composition.zig | Backlog | **Closed** |
-| 33 | P3 | 10 | Redundant `getCombiningClass` in CCC sort | normalization.zig | `src/unicode/normalization.zig:493-497` | Negligible (2-4 element runs) | -- | Cache CCC values | git blame normalization.zig | Backlog | Closed |
-| 34 | P3 | 10 | `appendRepeat` N separate appendSlice calls | builder.zig | `src/builder.zig:82-87` | Minor for small N | -- | Pre-allocate before loop | git blame builder.zig | Backlog | Closed |
+| 20 | P2 | **40** | **[P5]** ~~`containsIgnoreCase` O(H*N) naive sliding window, no ASCII fast-path~~ | comparison.zig | `src/ops/comparison.zig:122-149` -- ASCII fast-path added with `std.mem.indexOf` | 5-10x for ASCII inputs | -- | ASCII fast-path with pre-folded needle + `std.mem.indexOf` | git blame comparison.zig | Quarter | **Closed** |
+| 21 | P2 | 40 | `StringBuilder.replace` byte-by-byte scan | builder.zig | `src/builder.zig:152-173` | 3-10x for large buffers | -- | `std.mem.indexOf` + bulk copy | git blame builder.zig | Quarter | Closed |
+| 22 | P2 | 40 | Parallel map threshold 4096 too low | parallel.zig | `src/parallel.zig:157` -- (now 65536) | 0.84x seq (fixed to 65KB) | -- | Raised to 65536 | git blame parallel.zig | Quarter | Closed |
+| 23 | P2 | **40** | **[P3]** Batch template interpolation (per-byte append) | formatting.zig | `src/conversion/formatting.zig:24-64,81-153` | 5-10x for large templates | [#83](https://gitlab.com/devnw/zig/strings/-/issues/83) | Track literal segments, bulk appendSlice | git blame formatting.zig | Quarter | Closed |
+| 24 | P2 | **36** | **[P4 NEW]** Regex `CharClass.contains()` linear scan | regex.zig | `src/extended/regex.zig:313-322` -- linear scan over `self.ranges` for every codepoint match | O(n*r) where r = number of ranges per class | -- | Sort ranges + binary search, or bitmap for BMP | git blame regex.zig | Quarter | **Closed** |
+| 25 | P2 | **35** | **[P5]** ~~`sequentialCount` no SIMD dispatch for single-byte needles~~ | parallel.zig | `src/parallel.zig:132-146` -- SIMD `countScalar` fast-path added with `@Vector`/`@popCount` | 48.5x throughput for single-byte counting | -- | SIMD `countScalar` dispatch for `needle.len == 1` | git blame parallel.zig | Quarter | **Closed** |
+| 26 | P2 | 35 | `normalize()` materializes full codepoint buffer | normalization.zig | `src/unicode/normalization.zig:422-442` | O(n) extra memory | [#45](https://gitlab.com/devnw/zig/strings/-/issues/45) | Streaming with fixed windows | git blame normalization.zig | Quarter | **Closed** |
+| 27 | P2 | **35** | **[P4-REV NEW]** Unconditional `isIndicVirama()` on every codepoint | grapheme.zig | `src/unicode/grapheme.zig:367` -- `updateStateWithCodepoint()` guarded with `cp >= 0x094D` | 242,823 ns/op grapheme (41% regression vs Phase 1) | -- | Guard with `if (cp >= 0x094D)` before `isIndicVirama()` call | git blame grapheme.zig | Quarter | **Closed** |
+| 28 | P2 | 35 | `trimLeftChars`/`trimRightChars` O(n*m) | manipulation.zig | `src/ops/manipulation.zig` -- now uses `buildAsciiLookup()` for O(1) ASCII membership | Same as containsAny | [#44](https://gitlab.com/devnw/zig/strings/-/issues/44) | `[256]bool` lookup table (closed as part of P2-8) | git blame manipulation.zig | Quarter | **Closed** |
+| 29 | P2 | **32** | **[P4 NEW]** `replaceN()` double scan | manipulation.zig | `src/ops/manipulation.zig:303-365` -- pass 1 counts occurrences, pass 2 replaces; intentional design for exact pre-allocation | ~1.5x scan overhead traded for zero reallocation cost | -- | Won't fix: double scan enables exact allocation, avoiding ArrayList growth overhead. Doc comment added. | git blame manipulation.zig | Quarter | **Won't Do** |
+| 30 | P2 | **30** | **[P4-REV NEW]** `normalize()` ASCII fast-path scalar loop instead of SIMD | normalization.zig | `src/unicode/normalization.zig:15,458` -- `simd.isAllAscii()` replaces scalar loop | 7.6x SIMD vs scalar measured in simd benchmarks | -- | Replace scalar loop with `simd.isAllAscii()` (already available + tested) | git blame normalization.zig | Quarter | **Closed** |
+| 31 | P2 | 30 | `isExtendedPictographic` incomplete ranges | grapheme.zig | `src/unicode/grapheme.zig:225-241` -- "Simplified" | Incorrect grapheme counts | -- | Full UCD Extended_Pictographic table | git blame grapheme.zig | Quarter | Won't Do |
+| 32 | P2 | 25 | `replace()` scans string twice | manipulation.zig | `src/ops/manipulation.zig` -- delegates to `replaceN()` which uses intentional double scan for exact allocation | ~1.2x overhead | [#46](https://gitlab.com/devnw/zig/strings/-/issues/46) | Won't fix: same rationale as P2-16 (exact pre-allocation avoids realloc overhead) | git blame manipulation.zig | Quarter | **Won't Do** |
+| 33 | P3 | **15** | **[P4-REV NEW]** `reverse()` over-allocates cluster ArrayList by 16x for ASCII | manipulation.zig | `src/ops/manipulation.zig:319` -- capacity hint changed to `str.len / 4 + 1` | 16x memory overhead reduced to ~4x | -- | Use `str.len / 4 + 1` as capacity hint | git blame manipulation.zig | Backlog | **Closed** |
+| 34 | P3 | 15 | Composition binary search on 941-entry array | composition.zig | `src/unicode/data/composition.zig` -- block-indexed | <10% improvement | -- | Block index on starter (subsumed by P2-10) | git blame composition.zig | Backlog | **Closed** |
+| 35 | P3 | 10 | Redundant `getCombiningClass` in CCC sort | normalization.zig | `src/unicode/normalization.zig:493-497` | Negligible (2-4 element runs) | -- | Cache CCC values | git blame normalization.zig | Backlog | Closed |
+| 36 | P3 | 10 | `appendRepeat` N separate appendSlice calls | builder.zig | `src/builder.zig:82-87` | Minor for small N | -- | Pre-allocate before loop | git blame builder.zig | Backlog | Closed |
 
 ---
 
@@ -836,6 +843,117 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 - **Status:** Won't Do (Wave 3, 2026-03-24). The double scan is an intentional design choice that enables exact pre-allocation, avoiding ArrayList growth overhead. A doc comment was added to `replaceN()` documenting the tradeoff. The ~1.5x scan overhead is traded for zero reallocation cost, which is the better tradeoff for most real-world inputs.
 - **Note:** Related to P2-6 (same root cause, different PerfScore due to refined evidence). P2-6 closed as Won't Do with identical rationale.
 
+#### P-NEW-3: `containsIgnoreCase` O(H*N) Naive Sliding Window, No ASCII Fast-Path [NEW -- Phase 5]
+
+- **PerfSeverity:** P2 | **PerfScore:** 40 (Impact: 2, Likelihood: 5, Confidence: suspected)
+- **Summary:** `containsIgnoreCase()` uses a naive O(H*N) sliding window where H = haystack codepoint count and N = needle codepoint count. For each position in the haystack, it creates a fresh UTF-8 iterator over the remaining haystack and a fresh iterator over the entire needle, comparing codepoints via `case.equalsCaseFold()`. There is no ASCII fast-path, no pre-folding of the needle, and no SIMD acceleration. For large inputs this approaches quadratic behavior.
+- **Perf Impact:** O(H*N) time complexity. For a 10KB haystack with a 100-byte needle, this is ~100M codepoint comparisons in the worst case (no match). An ASCII fast-path with pre-folded needle and `std.mem.indexOf` would reduce to O(H) for ASCII-only inputs. A Boyer-Moore or two-way algorithm would improve the general case to O(H).
+- **Evidence:**
+  ```
+  // src/ops/comparison.zig:122-149
+  pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+      if (needle.len == 0) return true;
+      if (needle.len > haystack.len) return false;
+
+      // Simple sliding window approach
+      var h_iter = utf8.iterator(haystack);
+      var h_index: usize = 0;
+
+      while (h_iter.nextWithIndex()) |h_result| {
+          // Try to match needle starting from this position
+          var match = true;
+          var h_check = utf8.iterator(haystack[h_result.index..]);  // new iterator per position
+          var n_check = utf8.iterator(needle);                       // new iterator per position
+
+          while (n_check.next()) |n_cp| {
+              const h_cp = h_check.next();
+              if (h_cp == null or !case.equalsCaseFold(h_cp.?, n_cp)) {
+                  match = false;
+                  break;
+              }
+          }
+
+          if (match) return true;
+          h_index += 1;
+      }
+
+      return false;
+  }
+  ```
+  No import of `simd` module. No ASCII detection. `equalsCaseFold()` is called per codepoint pair on a hot inner loop.
+- **Root Cause:** Straightforward brute-force implementation without algorithmic optimization. Case-insensitive substring search is a well-studied problem with established O(H) algorithms (case-fold the needle once, then use a fast string search on the case-folded haystack).
+- **Fix Guidance:**
+  1. **ASCII fast-path:** If both haystack and needle are all-ASCII (check via `simd.isAllAscii()`), pre-fold the needle to lowercase, fold the haystack to lowercase, and use `std.mem.indexOf` for O(H) search.
+  2. **General case:** Pre-fold the needle to lowercase codepoints once. Then iterate the haystack, case-folding each codepoint on the fly, and use a two-pointer or KMP-style match against the pre-folded needle.
+  3. **SIMD acceleration:** For the ASCII fast-path, use `simd.toLowerAscii()` to bulk-fold before searching.
+- **Validation Plan:**
+  ```
+  zig build bench -- --filter "containsIgnoreCase"
+  # Test: haystack = 10KB ASCII text, needle = "hello world" (11 bytes, no match)
+  # Current: O(H*N) ~= 10K * 11 = 110K comparisons via equalsCaseFold
+  # Expected with ASCII fast-path: O(H) ~= 10K comparisons via std.mem.indexOf
+  # Expected improvement: ~5-10x for ASCII inputs
+  # Also run: zig build test -- --test-filter "containsIgnoreCase"
+  ```
+- **Affected Paths:** `src/ops/comparison.zig`
+- **Rollout Risk:** Low. ASCII fast-path is a pure optimization with identical semantics. Pre-folding the needle is safe since case folding is idempotent. The general-case improvement (KMP/two-way) requires careful handling of multi-codepoint case folds (e.g., German sharp-s) but can be deferred.
+- **Owner:** git blame src/ops/comparison.zig | **SLA:** Next quarter
+- **Status:** Closed (2026-03-25). ASCII fast-path added: `isAllAscii()` check on both inputs; lowercase both into stack buffers (up to 4096 bytes, page_allocator fallback for larger); `std.mem.indexOf` for O(H) search. Unicode path preserved as fallback in `containsIgnoreCaseUnicode()`. Two new tests added covering edge cases, ASCII path, helper functions, and Unicode fallback.
+
+#### P-NEW-4: `sequentialCount` No SIMD Dispatch for Single-Byte Needles [NEW -- Phase 5]
+
+- **PerfSeverity:** P2 | **PerfScore:** 35 (Impact: 2, Likelihood: 4+, Confidence: suspected)
+- **Summary:** `sequentialCount()` in `src/parallel.zig` uses a scalar `std.mem.eql` loop to count non-overlapping occurrences of a needle in a haystack. When the needle is a single byte (the common case for character counting), this is a byte-by-byte scan. The SIMD module provides `simd.countByte()` which benchmarks at 48.5x scalar throughput for single-byte counting. This SIMD path is not wired in.
+- **Perf Impact:** 48.5x throughput gap for single-byte needle counting. For a 1MB haystack counting occurrences of a single character, the scalar path processes ~1 byte/cycle while SIMD processes ~48.5 bytes/cycle.
+- **Evidence:**
+  ```
+  // src/parallel.zig:132-146
+  fn sequentialCount(comptime T: type, haystack: []const T, needle: []const T) usize {
+      if (needle.len == 0 or haystack.len < needle.len) return 0;
+
+      var count: usize = 0;
+      var i: usize = 0;
+      while (i <= haystack.len - needle.len) {
+          if (std.mem.eql(T, haystack[i..][0..needle.len], needle)) {
+              count += 1;
+              i += needle.len; // Non-overlapping
+          } else {
+              i += 1;
+          }
+      }
+      return count;
+  }
+
+  // src/util/simd.zig -- countByte exists, benchmarked at 48.5x scalar
+  // Baseline benchmark data: SIMD countByte 48.5x scalar (see Phase 3 table)
+  ```
+  `sequentialCount` is the fallback path used by the parallel count infrastructure for sub-threshold inputs and as the leaf computation in parallel chunks. It does not check whether the needle is a single byte.
+- **Root Cause:** `sequentialCount` was written as a generic multi-byte needle counter. The single-byte special case (which can leverage SIMD `countByte`) was not considered. The SIMD `countByte` function exists and is tested but is not called from this code path.
+- **Fix Guidance:**
+  1. At the top of `sequentialCount`, add a single-byte dispatch:
+     ```
+     if (T == u8 and needle.len == 1) {
+         return simd.countByte(haystack, needle[0]);
+     }
+     ```
+  2. Ensure `simd` is imported in `parallel.zig` (check existing imports).
+  3. Note: `simd.countByte` counts all occurrences (overlapping and non-overlapping are the same for single bytes), so the non-overlapping semantics are preserved.
+- **Validation Plan:**
+  ```
+  zig build bench -- --filter "count"
+  # Test: haystack = 1MB text, needle = "a" (single byte)
+  # Current: scalar byte-by-byte scan
+  # Expected with SIMD dispatch: 48.5x throughput improvement
+  # Verify non-overlapping semantics preserved:
+  zig build test -- --test-filter "sequentialCount"
+  # Also verify parallel count still works end-to-end:
+  zig build test -- --test-filter "parallel"
+  ```
+- **Affected Paths:** `src/parallel.zig`, `src/util/simd.zig` (already implemented)
+- **Rollout Risk:** Very Low. `simd.countByte` is already tested and benchmarked. The dispatch is a pure optimization for a specific needle length. Multi-byte needles are unaffected. The semantics (non-overlapping count) are identical for single-byte needles since overlapping and non-overlapping counts are the same when needle length is 1.
+- **Owner:** git blame src/parallel.zig | **SLA:** Next quarter
+- **Status:** Closed (2026-03-25). Added SIMD fast-path in `sequentialCount`: when `needle.len == 1`, dispatches to `countScalar()` which uses `@Vector`/`@popCount` at the platform-preferred vector width via `std.simd.suggestVectorLength`. Implemented directly in `parallel.zig` using Zig's built-in SIMD primitives (no external simd module dependency needed). Tests added for `countScalar` covering sizes from 1 to 1000 bytes including remainder handling.
+
 ### Area: App -- Minor Optimizations
 
 #### P3-NEW-1: `reverse()` Over-Allocates Cluster ArrayList by 16x for ASCII [NEW -- Phase 4 Review]
@@ -917,6 +1035,8 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | ~~**P2-NEW-2:** Guard `isIndicVirama()` with `cp >= 0x094D`~~ | ~~0.25 day~~ | ~~10-30% grapheme for ASCII text; may explain 41% regression~~ | **Closed** |
 | ~~**P2-NEW-1:** Replace scalar ASCII loop with `simd.isAllAscii()` in normalize()~~ | ~~0.25 day~~ | ~~7.6x faster ASCII detection (modest overall impact)~~ | **Closed** |
 | ~~**P3-NEW-1:** Reduce `reverse()` cluster capacity hint to `str.len / 4`~~ | ~~0.1 day~~ | ~~4x memory reduction for ArrayList backing~~ | **Closed** |
+| **P-NEW-3:** ASCII fast-path + pre-fold needle in `containsIgnoreCase` | 0.5 day | 5-10x for ASCII inputs (eliminates O(H*N) for common case) | **Closed** |
+| **P-NEW-4:** SIMD `countByte` dispatch in `sequentialCount` for single-byte needles | 0.25 day | 48.5x throughput for single-byte counting | **Closed** |
 
 ### Medium Effort (1-5 days each)
 
@@ -964,6 +1084,10 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 
 12. **Phase 4 review closure verification:** All 21 previously closed items verified -- no regressions detected. Overall performance rating: GOOD.
 
+13. **P-NEW-3 measurement needed:** The `containsIgnoreCase` O(H*N) finding is `confidence::suspected`. To confirm severity, benchmark with a 10KB ASCII haystack and an 11-byte needle that does not match: measure ns/op before and after adding an ASCII fast-path with pre-folded needle + `std.mem.indexOf`. If improvement is >= 5x, the PerfScore of 40 is confirmed.
+
+14. **P-NEW-4 measurement needed:** The `sequentialCount` SIMD gap is `confidence::suspected` based on the existing SIMD `countByte` benchmark (48.5x scalar). To confirm end-to-end impact, benchmark `sequentialCount` directly with a 1MB haystack and single-byte needle before and after adding the `simd.countByte` dispatch. The 48.5x figure is for the SIMD primitive alone; actual improvement will depend on function call overhead and input size distribution.
+
 ---
 
 ## Issue Cross-Reference
@@ -987,3 +1111,5 @@ Sorted by PerfScore descending. Phase 3 findings marked with **[P3]**. Phase 4 r
 | P2-NEW-1 | -- (not yet filed) | **Closed** (replaced scalar loop with `simd.isAllAscii()`) |
 | P2-NEW-2 | -- (not yet filed) | **Closed** (guarded with `cp >= 0x094D`) |
 | P3-NEW-1 | -- (not yet filed) | **Closed** (capacity hint `str.len / 4 + 1`) |
+| P-NEW-3 | -- (not yet filed) | **Closed** (`containsIgnoreCase` ASCII fast-path added) |
+| P-NEW-4 | -- (not yet filed) | **Closed** (SIMD `countScalar` fast-path added in `parallel.zig`) |

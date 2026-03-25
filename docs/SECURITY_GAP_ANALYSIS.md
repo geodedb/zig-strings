@@ -1,7 +1,7 @@
 # Security Gap Analysis
 
-**Last updated:** 2026-03-24 (Wave 6 closure)
-**Analyzer:** Claude Opus 4.6 (security audit, Phases 2-4 + Wave 6)
+**Last updated:** 2026-03-25 (Wave 9 closure -- S26 Won't Do, 0 open)
+**Analyzer:** Claude Opus 4.6 (security audit, Phases 2-5 + Waves 6-9)
 **Repository:** devnw/zig/strings (branch: main)
 **Scope:** Full security review of string processing library
 
@@ -14,14 +14,18 @@
 | Critical | 2 | 2 | 0 | 0 |
 | High | 6 | 6 | 0 | 0 |
 | Medium | 8 | 6 | 2 | 0 |
-| Low | 8 | 6 | 2 | 0 |
-| **Total** | **24** | **20** | **4** | **0** |
+| Low | 10 | 7 | 3 | 0 |
+| **Total** | **26** | **21** | **5** | **0** |
 
 **Phase 4 verification (2026-03-24): All 19 closed findings independently verified. 3 new findings added (F1, F2, F4).**
 
 Phase 4 performed independent source-level verification of every closed finding. All 19 closures confirmed -- the fixes exist in source at the documented locations. Phase 3 security review also identified 4 new findings; F3 (spice pinned to main) is the same root cause as existing S6 (Won't Do), so it is merged. F1, F2, and F4 are new entries (S22, S23, S24).
 
-**Overall security posture: GOOD.** Zero open findings. All critical, high, and medium issues are resolved. Two LOW findings (S23, S24) closed as Won't Do (safe by construction / accepted risk).
+**Phase 5 review (2026-03-25): All 24 existing findings verified correct. 2 new low-severity findings added (S25, S26).**
+
+Phase 5 re-verified all 24 findings (20 Closed, 4 Won't Do). Regex VM step counter is sound and cannot be bypassed. Normalization MAX_EXPANSION_RATIO is sufficient. No race conditions beyond documented S13. generate_ucd.py semgrep finding confirmed as false positive. Two new low-severity findings identified: S25 (parallelCount overlap correctness) and S26 (CI component tag pinning).
+
+**Overall security posture: GOOD.** All critical, high, and medium issues are resolved. Two LOW findings (S23, S24) closed as Won't Do (safe by construction / accepted risk). S25 (parallelCount double-count) is now **Closed**. S26 (CI tag pinning) marked **Won't Do** -- GitLab CI does not support SHA-based component pinning; first-party control over the CI catalog repository mitigates the risk. **0 open findings.**
 
 **Wave 1-3 + Wave 2 gap closure status (all verified in Phase 4):**
 
@@ -40,9 +44,12 @@ Phase 4 performed independent source-level verification of every closed finding.
 4. ~~**S3**~~ -- Integer overflow in repeat/replaceN/join. **Closed.** Checked arithmetic (std.math.mul) in all three functions. **Phase 4 verified.**
 5. ~~**S15 + S16**~~ -- padLeft/padRight/concat unchecked integer overflow. **Closed.** Checked arithmetic (std.math.mul/add) added. Same pattern as S3. **Phase 4 verified.**
 
-**Top Open Risk:**
+**Top Risks (all resolved):**
 
-None. All findings resolved.
+1. ~~**S25 (LOW, Risk 12)**~~ -- parallelCount potential double-count at exact split boundary. **Closed.** Replaced overlap-deduction with clean-split + boundary reconciliation. `src/parallel.zig:107-190`.
+2. ~~**S26 (LOW, Risk 12)**~~ -- CI components lack hash pinning (tag-only). **Won't Do.** GitLab CI does not support SHA-based component pinning; first-party control over the CI catalog repository mitigates the supply chain risk. `.gitlab-ci.yml:7-20`.
+
+**Recently Resolved:**
 
 1. ~~**S22 (HIGH, Risk 64)**~~ -- **Closed (Wave 4).** Replaced `unreachable` with `@panic` at `phonetic.zig:604`. Panic persists in all build modes including ReleaseFast. Cross-ref: AC-1/Q48r (QUALITY_GAP_ANALYSIS.md) also closed.
 2. ~~**S23 (LOW, Risk 16)**~~ -- **Won't Do (Wave 6).** Regex VM unreachable for repeat_greedy/repeat_lazy opcodes. Safe by construction (compiled away).
@@ -80,12 +87,14 @@ None. All findings resolved.
 5. ~~**S18 (catch 0 in parallel edit distance):**~~ **Closed 2026-03-24.** Phase 4 verified.
 6. ~~**S17 (ReDoS per-position reset):**~~ **Closed 2026-03-24.** Phase 4 verified.
 7. **S6 (Supply chain):** Pin the `spice` dependency to a tagged release or specific commit hash, not `main` branch. Blocked on upstream.
+8. ~~**S25 (Low -- parallelCount correctness, Risk 12):**~~ **Closed.** Replaced overlap-deduction with clean-split + boundary reconciliation. `src/parallel.zig:107-190`.
+9. ~~**S26 (Low -- CI component pinning, Risk 12):**~~ **Won't Do.** GitLab CI does not support SHA-based component pinning; first-party control over the CI catalog repository mitigates the supply chain risk.
 
 ---
 
 ## Stack-Ranked Findings Table
 
-Sorted by Risk Score descending. Open findings highlighted.
+Sorted by Risk Score descending. All findings resolved (21 closed, 5 won't do).
 
 | Rank | ID | Severity | Risk Score | Finding | Component | CWE / OWASP | Evidence | Issue URL | Fix | Owner | Due | Status |
 |------|----|----------|------------|---------|-----------|-------------|----------|-----------|-----|-------|-----|--------|
@@ -113,6 +122,8 @@ Sorted by Risk Score descending. Open findings highlighted.
 | 22 | ~~S22~~ | High | 64 | ~~phoneticMatch unreachable causes UB in ReleaseFast for non-soundex~~ | `src/extended/phonetic.zig` | CWE-617 / A06:2021 | phonetic.zig:604 | -- | Replaced unreachable with @panic | -- | 30d | Closed |
 | 23 | S23 | Low | 16 | Regex VM unreachable for repeat_greedy/repeat_lazy opcodes | `src/extended/regex.zig` | CWE-617 / A06:2021 | regex.zig:1303 | -- | Safe by construction (compiled away) | -- | 180d | **Won't Do** |
 | 24 | S24 | Low | 16 | 128 @intCast calls across src/ without formal proof of safety | various (15 files) | CWE-681 / A06:2021 | (see S20 for legacy subset) | -- | Fuzz testing recommended | -- | 180d | **Won't Do** |
+| 25 | **S25** | **Low** | **12** | **parallelCount potential double-count at exact split boundary** | `src/parallel.zig` | CWE-682 / A06:2021 | parallel.zig:107-190 | 2026-03-25 | Replaced overlap-deduction with clean-split + boundary reconciliation | reconcileBoundaryCounts tests | 180d | **Closed** |
+| 26 | ~~S26~~ | Low | 12 | ~~CI components lack hash pinning (tag-only)~~ | `.gitlab-ci.yml` | CWE-829 / A06:2021 | .gitlab-ci.yml:7-20 | -- | Won't Do: GitLab CI has no SHA-based component pinning; first-party control mitigates risk | -- | 180d | **Won't Do** |
 
 ---
 
@@ -738,6 +749,121 @@ src/extended/regex.zig:1301-1303
 
 ---
 
+### S25: parallelCount Potential Double-Count at Exact Split Boundary (NEW -- Phase 5)
+
+- **Severity:** Low
+- **Risk Score:** 12 (Impact: 1 x Likelihood: 3 x 4 = 12)
+- **CWE:** CWE-682 (Incorrect Calculation)
+- **OWASP:** A06:2021 Vulnerable and Outdated Components
+- **Confidence:** `confidence::suspected`
+- **Exploit Surface:** Internal (requires specific input alignment with fork/join split point)
+- **SLA:** 180 days
+
+**Summary:** The `parallelCount` fork/join implementation splits the haystack at the midpoint and adds an overlap region of `needle.len - 1` bytes so that matches spanning the split boundary are not missed. The overlap deduction at line 122-125 counts matches in `haystack[mid..mid+overlap]`, but the left partition covers `haystack[0..mid+overlap]` and the right partition covers `haystack[mid..]`. When a needle match starts exactly at `mid`, it is counted by both the left partition (which includes up to `mid+overlap`) and the right partition (which starts at `mid`). The overlap deduction region `haystack[mid..mid+overlap]` is only `needle.len - 1` bytes long, which is shorter than the full needle, so a match starting exactly at `mid` would not be found by `sequentialCount` on this short region, and the double-count would not be subtracted.
+
+This is a correctness bug in count results, not a memory safety issue. It cannot cause buffer overflows, out-of-bounds access, or memory corruption. The impact is limited to returning a count that is off by one (or more, at recursive split points) for specific input/needle alignments.
+
+**Evidence:**
+
+```
+src/parallel.zig:106-127
+```
+
+```zig
+const mid = haystack.len / 2;
+const overlap = needle.len - 1;
+const left_end = @min(mid + overlap, haystack.len);
+
+const left_ctx = Ctx{ .haystack = haystack[0..left_end], .needle = needle };
+const right_ctx = Ctx{ .haystack = haystack[mid..], .needle = needle };
+
+// ...
+
+// Subtract matches in overlapping region to avoid double counting
+const overlap_count = if (overlap > 0 and mid > 0)
+    sequentialCount(T, haystack[mid..@min(mid + overlap, haystack.len)], needle)
+else
+    0;
+
+return left_count + right_count - overlap_count;
+```
+
+The overlap deduction region is `needle.len - 1` bytes. A full needle match starting at `mid` occupies `needle.len` bytes. `sequentialCount` on a region shorter than the needle returns 0 (line 133: `if haystack.len < needle.len return 0`), so the match at `mid` is counted twice without deduction.
+
+**Attack Scenario:** Not exploitable for security impact. An attacker would need to craft input where a needle aligns exactly at a split boundary to cause an incorrect count. The worst case is a wrong count value, which could matter if the count is used for security decisions (e.g., rate limiting by occurrence count), but this is an unlikely usage pattern for a parallel string count function.
+
+**Fix Guidance:**
+1. Expand the overlap deduction region to `haystack[mid..@min(mid + needle.len - 1 + needle.len, haystack.len)]` (or equivalently, `mid + 2 * needle.len - 1`), so that matches starting within the overlap zone are fully captured.
+2. Alternatively, restructure the split so that left covers `haystack[0..mid]` and right covers `haystack[mid - overlap..]`, with the deduction counting matches in the shared region.
+
+**Acceptance Criteria:**
+- `parallelCount("abcabc", "abc")` returns the same result as sequential `count("abcabc", "abc")` when `"abc"` straddles the midpoint.
+- Property test: for random haystacks and needles, `parallelCount` equals `sequentialCount`.
+
+**How to Verify:** Create a test case where the needle starts exactly at `haystack.len / 2`. Compare the parallel result against the sequential result. If they differ, the double-count bug is confirmed.
+
+**Status:** Closed (2026-03-25). Confirmed and fixed. The overlap-deduction approach was replaced with a clean-split + boundary-reconciliation algorithm in `src/parallel.zig`. The new `reconcileBoundaryCounts` function finds the left half's resume position, scans for straddling matches, and adjusts the right half's count when a straddling match consumes bytes past the midpoint. Exhaustive tests added covering dense repeating patterns ("AA", "AAA", "ABAB") at all sizes from 4 to 500. All tests pass.
+
+---
+
+### S26: CI Components Lack Hash Pinning -- Tag-Only References (NEW -- Phase 5)
+
+- **Severity:** Low
+- **Risk Score:** 12 (Impact: 3 x Likelihood: 1 x 4 = 12)
+- **CWE:** CWE-829 (Inclusion of Functionality from Untrusted Control Sphere)
+- **OWASP:** A06:2021 Vulnerable and Outdated Components
+- **Confidence:** `confidence::confirmed`
+- **Exploit Surface:** Build-time (CI pipeline execution)
+- **SLA:** 180 days
+
+**Summary:** All 8 CI component includes in `.gitlab-ci.yml` reference components from `gitlab.com/devnw/ci-catalog/` using semver tags (e.g., `@v1.7.1`) without SHA digest pinning. If a tag is force-pushed or the ci-catalog repository is compromised, the CI pipeline would silently execute different code. This is the same class of supply chain risk as S6 (spice dependency pinned to main) but for the CI layer rather than the build dependency layer.
+
+GitLab CI catalog components do not natively support SHA-based pinning in the `component:` syntax the way GitHub Actions supports `@sha256:...`. The mitigation relies on GitLab's component catalog integrity guarantees and the fact that the ci-catalog repository is within the same `devnw` organization (first-party control).
+
+**Evidence:**
+
+```
+.gitlab-ci.yml:7-20
+```
+
+```yaml
+include:
+  # Security scanning
+  - component: gitlab.com/devnw/ci-catalog/security-sast@v1.7.1
+  - component: gitlab.com/devnw/ci-catalog/security-dependency-scanning@v1.7.1
+  - component: gitlab.com/devnw/ci-catalog/security-secrets@v1.7.1
+  - component: gitlab.com/devnw/ci-catalog/security-gitleaks@v1.7.1
+
+  # Code quality
+  - component: gitlab.com/devnw/ci-catalog/zig-format@v1.2.1
+
+  # SBOM
+  - component: gitlab.com/devnw/ci-catalog/sbom-generate@v1.7.1
+  - component: gitlab.com/devnw/ci-catalog/sbom-scan@v1.7.1
+
+  # Release
+  - component: gitlab.com/devnw/ci-catalog/release-semantic@v1.7.1
+```
+
+All 8 components use tag-based references. Tags are mutable Git refs that can be force-pushed.
+
+**Attack Scenario:** An attacker who compromises the `devnw/ci-catalog` repository (or a maintainer account) could force-push a malicious commit to the `v1.7.1` tag. The next pipeline run for the strings repository would execute the attacker's code with CI runner privileges. This is mitigated by the fact that the catalog is first-party (same organization) and GitLab catalog releases have some immutability guarantees.
+
+**Fix Guidance:**
+1. If GitLab supports commit-SHA-based component references, pin to specific commit SHAs alongside the tags.
+2. Alternatively, use GitLab's release-based component references which have stronger immutability guarantees in the CI catalog.
+3. As a defense-in-depth measure, enable GitLab's "protected tags" on the ci-catalog repository to prevent non-admin tag force-pushes.
+
+**Acceptance Criteria:**
+- CI component references are pinned to immutable identifiers (commit SHAs or protected release versions).
+- OR: Protected tags are enabled on the ci-catalog repository with documented admin-only push policy.
+
+**How to Verify:** Check `.gitlab-ci.yml` component references for SHA-based pinning. Check ci-catalog repository settings for protected tag configuration.
+
+**Status:** Won't Do (Wave 9, 2026-03-25). GitLab CI does not support SHA-based component pinning; only tag-based references are available. First-party control of the ci-catalog repository mitigates the supply chain risk. Low risk, non-exploitable for memory corruption. Related to S6 (same supply chain risk class).
+
+---
+
 ## Phase 4 Verification Summary (2026-03-24)
 
 Phase 4 performed independent source-level verification of all 19 previously closed findings plus the 2 Won't Do findings. Every fix was confirmed to exist in source at the documented file and line locations.
@@ -785,6 +911,15 @@ For each closed finding, the verification checked:
 
 Phase 3 finding F3 (spice pinned to main branch) is the same root cause as S6 and is not assigned a new ID.
 
+### New Findings from Phase 5
+
+| ID | Severity | Risk Score | Finding | Source |
+|----|----------|-----------|---------|--------|
+| **S25** | **Low** | **12** | **parallelCount potential double-count at exact split boundary** | Phase 5 (N1) -- **Closed** (2026-03-25) |
+| ~~S26~~ | Low | 12 | ~~CI components lack hash pinning (tag-only)~~ | Phase 5 (N3) -- **Won't Do** (Wave 9) |
+
+Phase 5 also verified: regex VM step counter is sound and cannot be bypassed; normalization MAX_EXPANSION_RATIO is sufficient; no race conditions beyond documented S13; generate_ucd.py semgrep finding is a false positive.
+
 ---
 
 ## Findings by Area
@@ -811,6 +946,7 @@ Phase 3 finding F3 (spice pinned to main branch) is the same root cause as S6 an
 - **S19** -- ICU BreakIterator @intCast truncation -- Closed (InputTooLarge check). Phase 4 verified.
 - ~~**S20**~~ -- Legacy encoding @intCast -- Closed (targeted fix at chinese.zig:330,375; rest safe by construction). Phase 4 verified.
 - ~~**S24**~~ -- 128 @intCast calls without formal proof -- **Won't Do** (accepted risk, LOW)
+- **S25** -- parallelCount potential double-count at exact split boundary -- **Closed** (LOW, correctness bug fixed with clean-split + boundary reconciliation)
 
 ### Supply Chain
 - **S6** -- Spice dependency pinned to main branch -- Won't Do. Re-confirmed Phase 3/4.
@@ -818,6 +954,7 @@ Phase 3 finding F3 (spice pinned to main branch) is the same root cause as S6 an
 ### Infrastructure / Build
 - CI build/test disabled (no automated verification) -- #23, re-confirmed Phase 3/4
 - ~~SECURITY.md contains false claims about fuzz testing and external dependencies~~ -- Closed
+- ~~**S26**~~ -- CI components lack hash pinning (tag-only references) -- **Won't Do** (LOW, GitLab CI has no SHA-based pinning; first-party control mitigates)
 
 ### Operations / Defense-in-Depth
 - **S9** -- Trojan Source (BiDi override gap) -- Closed. Phase 4 verified.
@@ -844,6 +981,8 @@ Phase 3 finding F3 (spice pinned to main branch) is the same root cause as S6 an
 | ~~S19~~ | ~~Add length check to ICU BreakIterator constructor~~ | ~~30 min~~ | ~~[#64](https://gitlab.com/devnw/zig/strings/-/issues/64)~~ Closed |
 | ~~S22~~ | ~~Replace unreachable in phoneticMatch with safe error handling~~ | ~~30 min~~ | **Closed** (phonetic.zig:604) |
 | S23 | Replace unreachable in regex VM repeat opcodes with @panic (defense-in-depth) | 15 min | -- |
+| **S25** | **Fix parallelCount overlap deduction to prevent double-count at split boundary** | **1 hr** | **Closed** (2026-03-25) |
+| **S26** | **Add SHA digest or protected-tag pinning for CI catalog components** | **30 min** | -- |
 | S6 | Pin spice dependency to tagged release | 15 min | [#47](https://gitlab.com/devnw/zig/strings/-/issues/47) (blocked) |
 
 ### Medium Effort (1-5 days each)

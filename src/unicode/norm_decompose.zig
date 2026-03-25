@@ -11,9 +11,10 @@ const ucd_decomp = @import("ucd_decomposition");
 
 pub const Codepoint = types.Codepoint;
 
-/// Decomposes a code point with optional compatibility decomposition (for NFKC/NFKD)
-pub fn decomposeWithCompat(cp: Codepoint, buf: []Codepoint, use_compat: bool) []Codepoint {
-    // Hangul algorithmic decomposition
+/// Decomposes a single code point one level (no recursion).
+/// Used as the building block for the recursive decomposer.
+fn decomposeOneLevel(cp: Codepoint, buf: []Codepoint, use_compat: bool) []Codepoint {
+    // Hangul algorithmic decomposition (already fully decomposed)
     if (cp >= 0xAC00 and cp <= 0xD7A3) {
         return decomposeHangul(cp, buf);
     }
@@ -41,6 +42,73 @@ pub fn decomposeWithCompat(cp: Codepoint, buf: []Codepoint, use_compat: bool) []
         return buf[0..1];
     }
     return &.{};
+}
+
+/// Decomposes a code point with optional compatibility decomposition (for NFKC/NFKD).
+///
+/// Performs recursive decomposition as required by UAX #15: each code point
+/// in the initial decomposition is itself decomposed until no further
+/// decomposition applies. This ensures characters like U+01D5 (which
+/// decomposes to U+00DC + U+0304, where U+00DC further decomposes to
+/// U+0055 + U+0308) are fully decomposed in a single call.
+pub fn decomposeWithCompat(cp: Codepoint, buf: []Codepoint, use_compat: bool) []Codepoint {
+    // First level decomposition
+    var tmp_buf: [18]Codepoint = undefined;
+    const first_level = decomposeOneLevel(cp, &tmp_buf, use_compat);
+
+    // If no decomposition occurred (single cp returned unchanged), short-circuit
+    if (first_level.len == 1 and first_level[0] == cp) {
+        if (buf.len > 0) {
+            buf[0] = cp;
+            return buf[0..1];
+        }
+        return &.{};
+    }
+
+    // Recursively decompose each code point in the result.
+    // We use buf as the output accumulator and a second temp buffer for
+    // nested decomposition. Maximum canonical decomposition depth in Unicode
+    // is 3 levels; the recursion handles any depth.
+    var out_len: usize = 0;
+    for (first_level) |dcp| {
+        // Hangul Jamo L/V/T do not decompose further
+        if ((dcp >= 0x1100 and dcp <= 0x115F) or
+            (dcp >= 0x1160 and dcp <= 0x11A7) or
+            (dcp >= 0x11A8 and dcp <= 0x11FF))
+        {
+            if (out_len < buf.len) {
+                buf[out_len] = dcp;
+                out_len += 1;
+            }
+            continue;
+        }
+
+        var sub_buf: [18]Codepoint = undefined;
+        const sub = decomposeOneLevel(dcp, &sub_buf, use_compat);
+
+        // Check if further recursion is needed
+        if (sub.len == 1 and sub[0] == dcp) {
+            // No further decomposition
+            if (out_len < buf.len) {
+                buf[out_len] = dcp;
+                out_len += 1;
+            }
+        } else {
+            // Recurse one more level (covers depth > 2, rare but possible)
+            for (sub) |sub_cp| {
+                var deep_buf: [18]Codepoint = undefined;
+                const deep = decomposeOneLevel(sub_cp, &deep_buf, use_compat);
+                for (deep) |deep_cp| {
+                    if (out_len < buf.len) {
+                        buf[out_len] = deep_cp;
+                        out_len += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    return buf[0..out_len];
 }
 
 /// Gets compatibility decomposition for a code point (for NFKC/NFKD)
@@ -96,6 +164,92 @@ pub fn getCompatibilityDecomposition(cp: Codepoint, buf: []Codepoint) ?[]Codepoi
             if (buf.len >= 2) {
                 buf[0] = 's';
                 buf[1] = 't';
+                return buf[0..2];
+            }
+        },
+
+        // Spacing modifier letters -> SPACE + combining mark (compat decomposition)
+        // Per UnicodeData.txt, these all have <compat> 0020 XXXX decompositions.
+        0x02B0 => { // MODIFIER LETTER SMALL H -> <super> 0068
+            if (buf.len >= 1) {
+                buf[0] = 0x0068;
+                return buf[0..1];
+            }
+        },
+        0x00A8 => { // DIAERESIS -> SPACE + COMBINING DIAERESIS
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0308;
+                return buf[0..2];
+            }
+        },
+        0x00AF => { // MACRON -> SPACE + COMBINING MACRON
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0304;
+                return buf[0..2];
+            }
+        },
+        0x00B4 => { // ACUTE ACCENT -> SPACE + COMBINING ACUTE ACCENT
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0301;
+                return buf[0..2];
+            }
+        },
+        0x00B8 => { // CEDILLA -> SPACE + COMBINING CEDILLA
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0327;
+                return buf[0..2];
+            }
+        },
+        0x02C7 => { // CARON -> SPACE + COMBINING CARON
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x030C;
+                return buf[0..2];
+            }
+        },
+        0x02D8 => { // BREVE -> SPACE + COMBINING BREVE
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0306;
+                return buf[0..2];
+            }
+        },
+        0x02D9 => { // DOT ABOVE -> SPACE + COMBINING DOT ABOVE
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0307;
+                return buf[0..2];
+            }
+        },
+        0x02DA => { // RING ABOVE -> SPACE + COMBINING RING ABOVE
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x030A;
+                return buf[0..2];
+            }
+        },
+        0x02DB => { // OGONEK -> SPACE + COMBINING OGONEK
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0328;
+                return buf[0..2];
+            }
+        },
+        0x02DC => { // SMALL TILDE -> SPACE + COMBINING TILDE
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x0303;
+                return buf[0..2];
+            }
+        },
+        0x02DD => { // DOUBLE ACUTE ACCENT -> SPACE + COMBINING DOUBLE ACUTE
+            if (buf.len >= 2) {
+                buf[0] = 0x0020;
+                buf[1] = 0x030B;
                 return buf[0..2];
             }
         },

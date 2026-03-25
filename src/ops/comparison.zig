@@ -118,14 +118,68 @@ pub fn endsWithIgnoreCase(haystack: []const u8, suffix: []const u8) bool {
     return true;
 }
 
+/// The maximum byte length for which the ASCII fast-path will use
+/// stack-allocated buffers. Inputs larger than this that are all-ASCII
+/// still benefit from the fast-path, but use a page allocator instead.
+const ascii_fast_path_stack_limit = 4096;
+
+/// Checks whether every byte in `bytes` is in the ASCII range (< 0x80).
+fn isAllAscii(bytes: []const u8) bool {
+    for (bytes) |b| {
+        if (b > 0x7F) return false;
+    }
+    return true;
+}
+
+/// Produces an ASCII-lowercased copy of `src` into `dst`.
+/// Caller must ensure `dst.len >= src.len`.
+fn asciiToLowerBuf(dst: []u8, src: []const u8) void {
+    for (dst[0..src.len], src) |*d, s| {
+        d.* = if (s >= 'A' and s <= 'Z') s + ('a' - 'A') else s;
+    }
+}
+
 /// Checks if a string contains another (case-insensitive)
 pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
     if (needle.len > haystack.len) return false;
 
+    // ASCII fast-path: when both inputs are pure ASCII we can lowercase
+    // the bytes and delegate to std.mem.indexOf which is heavily optimised.
+    if (isAllAscii(haystack) and isAllAscii(needle)) {
+        // Try stack buffers first; fall back to page allocator for large inputs.
+        if (haystack.len <= ascii_fast_path_stack_limit and
+            needle.len <= ascii_fast_path_stack_limit)
+        {
+            var h_buf: [ascii_fast_path_stack_limit]u8 = undefined;
+            var n_buf: [ascii_fast_path_stack_limit]u8 = undefined;
+            asciiToLowerBuf(&h_buf, haystack);
+            asciiToLowerBuf(&n_buf, needle);
+            return std.mem.indexOf(u8, h_buf[0..haystack.len], n_buf[0..needle.len]) != null;
+        } else {
+            // Large ASCII strings: use the page allocator (no free needed in
+            // practice for short-lived buffers, but we free anyway).
+            const allocator = std.heap.page_allocator;
+            const h_lower = allocator.alloc(u8, haystack.len) catch
+                return containsIgnoreCaseUnicode(haystack, needle);
+            defer allocator.free(h_lower);
+            const n_lower = allocator.alloc(u8, needle.len) catch
+                return containsIgnoreCaseUnicode(haystack, needle);
+            defer allocator.free(n_lower);
+            asciiToLowerBuf(h_lower, haystack);
+            asciiToLowerBuf(n_lower, needle);
+            return std.mem.indexOf(u8, h_lower, n_lower) != null;
+        }
+    }
+
+    return containsIgnoreCaseUnicode(haystack, needle);
+}
+
+/// Unicode fallback for containsIgnoreCase: O(H*N) sliding window with
+/// per-codepoint case folding.
+fn containsIgnoreCaseUnicode(haystack: []const u8, needle: []const u8) bool {
     // Simple sliding window approach
     var h_iter = utf8.iterator(haystack);
-    var h_index: usize = 0;
 
     while (h_iter.nextWithIndex()) |h_result| {
         // Try to match needle starting from this position
@@ -142,7 +196,6 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
         }
 
         if (match) return true;
-        h_index += 1;
     }
 
     return false;
@@ -306,6 +359,62 @@ test "containsIgnoreCase" {
 
     try testing.expect(containsIgnoreCase("Hello World", "LO WO"));
     try testing.expect(!containsIgnoreCase("Hello", "xyz"));
+}
+
+test "containsIgnoreCase ASCII fast-path" {
+    const testing = std.testing;
+
+    // Edge cases: empty needle always matches, empty haystack with non-empty needle does not
+    try testing.expect(containsIgnoreCase("anything", ""));
+    try testing.expect(containsIgnoreCase("", ""));
+    try testing.expect(!containsIgnoreCase("", "a"));
+
+    // Basic ASCII case-insensitive containment
+    try testing.expect(containsIgnoreCase("Hello World", "hello world"));
+    try testing.expect(containsIgnoreCase("HELLO WORLD", "hello"));
+    try testing.expect(containsIgnoreCase("hello world", "WORLD"));
+    try testing.expect(containsIgnoreCase("FooBarBaz", "obarb"));
+    try testing.expect(!containsIgnoreCase("Hello", "world"));
+
+    // Needle equals haystack (different cases)
+    try testing.expect(containsIgnoreCase("abc", "ABC"));
+    try testing.expect(containsIgnoreCase("ABC", "abc"));
+
+    // Needle at the very end
+    try testing.expect(containsIgnoreCase("abcdef", "DEF"));
+
+    // Needle at the very start
+    try testing.expect(containsIgnoreCase("abcdef", "ABC"));
+
+    // Single character
+    try testing.expect(containsIgnoreCase("a", "A"));
+    try testing.expect(!containsIgnoreCase("a", "B"));
+
+    // Digits and punctuation (no case folding, but still ASCII path)
+    try testing.expect(containsIgnoreCase("abc123def", "C123D"));
+    try testing.expect(containsIgnoreCase("hello, world!", ", WORLD!"));
+
+    // Non-ASCII input should fall through to Unicode path and still work
+    try testing.expect(containsIgnoreCase("caf\xc3\xa9 latte", "CAF\xc3\x89"));
+    try testing.expect(containsIgnoreCase("stra\xc3\x9fe", "STRA\xc3\x9fE"));
+}
+
+test "containsIgnoreCase ASCII fast-path helpers" {
+    const testing = std.testing;
+
+    // isAllAscii
+    try testing.expect(isAllAscii("hello"));
+    try testing.expect(isAllAscii(""));
+    try testing.expect(!isAllAscii("\xc3\xa9")); // e-acute in UTF-8
+
+    // asciiToLowerBuf
+    var buf: [5]u8 = undefined;
+    asciiToLowerBuf(&buf, "Hello");
+    try testing.expectEqualSlices(u8, "hello", &buf);
+    asciiToLowerBuf(&buf, "WORLD");
+    try testing.expectEqualSlices(u8, "world", &buf);
+    asciiToLowerBuf(&buf, "12345");
+    try testing.expectEqualSlices(u8, "12345", &buf);
 }
 
 test "compareNatural" {

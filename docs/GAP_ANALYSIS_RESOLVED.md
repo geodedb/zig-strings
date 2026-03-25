@@ -1,7 +1,7 @@
 # Gap Analysis -- Resolved Gaps
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-24 (Wave 6 closure)
+**Last updated:** 2026-03-25 (Wave 9 closure -- GAP-0035/0036/0037, A1, A4, S26 added)
 
 This file tracks gaps that have been resolved. Gap-IDs are never reused.
 
@@ -570,6 +570,84 @@ The following items from satellite analysis files were marked Won't Do during th
 | RM-1 | QUALITY_GAP_ANALYSIS.md | Duplicate lookup-table builders in manipulation.zig and search.zig | Semantic differences; ~15 lines not worth coupling |
 | S23 | SECURITY_GAP_ANALYSIS.md | Regex VM unreachable for repeat_greedy/repeat_lazy opcodes | Safe by construction (compiled away); accepted risk |
 | S24 | SECURITY_GAP_ANALYSIS.md | 128 @intCast calls across src/ without formal proof | Accepted risk; highest-risk casts fixed in S20; fuzz testing recommended |
+| S26 | SECURITY_GAP_ANALYSIS.md | CI components lack hash pinning (tag-only) | GitLab CI does not support SHA-based component pinning; first-party control over CI catalog repository mitigates supply chain risk |
+
+---
+
+## Wave 9 Resolved Items (2026-03-25)
+
+### GAP-0035: No official Unicode conformance test data integration (CLOSED)
+
+- **Original Severity:** Medium
+- **Status:** Closed (Wave 9)
+- **Resolved date:** 2026-03-25
+- **Issue:** [#13](https://gitlab.com/devnw/zig/strings/-/issues/13) (closed)
+- **Category:** Test
+- **Resolution summary:** Created `tests/unicode_conformance_vectors.zig` with 33 NormalizationTest.txt Part 1 vectors and 29 GraphemeBreakTest.txt vectors, all sourced from official Unicode 15.1 test data. Tests cover all four normalization forms (NFC, NFD, NFKC, NFKD) plus stability invariants (idempotency, round-trip) -- 9 test functions total. Grapheme tests cover GB3 (CR+LF), GB4/GB5 (controls), GB6-GB8 (Hangul), GB9 (Extend), GB9a (SpacingMark), GB9b (Prepend), GB11 (emoji ZWJ), GB12/GB13 (regional indicators). Added `test-conformance` build step in `build.zig`; also wired into `test-comprehensive` and `test-all`.
+- **Bugs found and fixed:**
+  - `norm_decompose.zig`: recursive decomposition for multi-level chains
+  - `grapheme.zig`: GB12/GB13 regional indicator parity reset
+  - Spacing modifier compat decompositions for U+00A8, U+00AF, U+00B4, U+00B8, U+02C7, U+02D8-U+02DD
+- **Resolution evidence:** `tests/unicode_conformance_vectors.zig`, `build.zig` (test-conformance step), `src/unicode/norm_decompose.zig` (recursive decomposition fix), `src/unicode/grapheme.zig` (GB12/GB13 ri_odd reset)
+
+---
+
+### GAP-0036: Thread safety documentation insufficient (CLOSED)
+
+- **Original Severity:** Low
+- **Status:** Closed (Wave 9)
+- **Resolved date:** 2026-03-25
+- **Issue:** [#20](https://gitlab.com/devnw/zig/strings/-/issues/20) (closed)
+- **Category:** Docs
+- **Resolution summary:** Added `/// Thread-safe: ...` doc comments to all 6 public functions in `src/parallel.zig` and thread safety annotations to all 5 public context/result types. Expanded `docs/ARCHITECTURE.md` Thread Safety section with subsections for General Guarantees, Parallel Module, and a Summary Table. Added Thread Safety section to `README.md`.
+- **Resolution evidence:** `src/parallel.zig` (doc comments on `getPool`, `deinitPool`, `parallelCount`, `parallelMap`, `parallelEditDistanceBatch`, `parallelFuzzySearch`, `CountContext`, `MapContext`, `EditDistanceBatchContext`, `FuzzySearchContext`, `FuzzyResult`), `docs/ARCHITECTURE.md` (Thread Safety section), `README.md` (Thread Safety section)
+
+---
+
+### GAP-0037: CI tests only Linux x86_64; README claims macOS/Windows (CLOSED)
+
+- **Original Severity:** Low
+- **Status:** Closed (Wave 9)
+- **Resolved date:** 2026-03-25
+- **Issue:** [#21](https://gitlab.com/devnw/zig/strings/-/issues/21) (closed)
+- **Category:** CI-CD
+- **Resolution summary:** Added 3 cross-compilation CI jobs to `.gitlab-ci.yml`: `build-macos-x86_64` (`-Dtarget=x86_64-macos`), `build-macos-aarch64` (`-Dtarget=aarch64-macos`), `build-windows-x86_64` (`-Dtarget=x86_64-windows`). README.md:11 updated to "Linux, macOS, Windows (cross-compilation verified in CI)".
+- **Resolution evidence:** `.gitlab-ci.yml` (3 cross-compilation jobs), `README.md:11`
+
+---
+
+### A1: Error type duplication across modules (CLOSED)
+
+- **Original Severity:** Medium
+- **Status:** Closed (Wave 7)
+- **Resolved date:** 2026-03-25
+- **Issue:** [#39](https://gitlab.com/devnw/zig/strings/-/issues/39)
+- **Category:** Maintainability
+- **Resolution summary:** Analysis confirmed remaining error sets are domain-specific (regex, normalization, encoding, parallel, etc.) with no meaningful overlap after M3 consolidated legacy encoding errors. No further consolidation warranted.
+- **Resolution evidence:** M3 fix (shared `LegacyEncodingError` in `src/encoding/legacy/errors.zig`). Remaining error sets verified as non-duplicative.
+
+---
+
+### A4: Inconsistent parameter ordering (CLOSED)
+
+- **Original Severity:** Low
+- **Status:** Closed (Wave 8)
+- **Resolved date:** 2026-03-25
+- **Issue:** [#76](https://gitlab.com/devnw/zig/strings/-/issues/76)
+- **Category:** API Contract
+- **Resolution summary:** Audited 143 functions across the library. Found 1 outlier: `ICUString.caseCompare` had allocator in a non-standard position. Fixed to follow `self, allocator, ...rest` convention. All functions now follow consistent `allocator-first` (standalone) or `self, allocator, ...rest` (methods) ordering.
+- **Resolution evidence:** `src/extended/icu.zig` (`caseCompare` parameter order fixed)
+
+---
+
+### S26: CI components lack hash pinning (WON'T DO)
+
+- **Original Severity:** Low
+- **Status:** Won't Do (Wave 9)
+- **Resolved date:** 2026-03-25
+- **Category:** Security
+- **Won't Do reason:** GitLab CI does not support SHA-based component pinning; only tag-based references are available. First-party control over the CI catalog repository mitigates the supply chain risk. The risk score (12) is low and non-exploitable for memory corruption.
+- **Evidence:** `.gitlab-ci.yml:7-20` (tag-based component references)
 
 ---
 
@@ -587,3 +665,6 @@ The following items from satellite analysis files were marked Won't Do during th
 | Wave 4 closures | 2026-03-24 | 2026-03-24 | GAP-0033, R4, S22/AC-1, AC-2, AC-3, RE-3, AC-4, P2-NEW-1, P2-NEW-2, P3-NEW-1, RM-1 (Won't Do) |
 | Post-closure audit | 2026-03-24 | 2026-03-24 | GAP-0001 fully resolved (NFC_QC/NFKC_QC), P1-6 closed (trie-based), P2-10 closed (block-indexed), P3-1 closed (subsumed) |
 | Wave 6 closures | 2026-03-24 | 2026-03-24 | P2-3 closed (streaming normalization), Q49 closed (file splitting), S23/S24 Won't Do |
+| Wave 7 closures | 2026-03-25 | 2026-03-25 | A1 closed (error type duplication -- domain-specific, no further consolidation) |
+| Wave 8 closures | 2026-03-25 | 2026-03-25 | A4 closed (parameter ordering -- 1 outlier ICUString.caseCompare fixed) |
+| Wave 9 closures | 2026-03-25 | 2026-03-25 | GAP-0035, GAP-0036, GAP-0037 closed; RM-4, P-NEW-3, P-NEW-4, S25, Q-CI1, Q-LOC1 closed; S26 Won't Do |

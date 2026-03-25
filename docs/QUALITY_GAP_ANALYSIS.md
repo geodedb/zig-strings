@@ -1,27 +1,29 @@
 # Quality Gap Analysis
 
-Last updated: 2026-03-24 (Wave 6 closure)
-Repository: devnw/zig/strings (branch: main)
-Analyzer: Claude Opus 4.6 (automated quality scoring -- Waves 1-6)
-Overall quality rating: **B+** (solid foundation, all critical/high issues resolved)
+Last updated: 2026-03-25 (Wave 8 -- A4 closed, all gaps resolved)
+Repository: devnw/zig/strings (branch: main, commit: 2eb1daf)
+Analyzer: Claude Opus 4.6 (automated quality scoring -- Waves 1-7)
+Overall quality rating: **A-** (all gaps closed or won't-do; zero deferred items remain)
 
 ---
 
 ## Summary
 
-| Severity | Total | Closed | Partial | Won't Do | Open |
-|----------|-------|--------|---------|----------|------|
+| Severity | Total | Closed | Partial | Won't Do | Deferred |
+|----------|-------|--------|---------|----------|----------|
 | Critical | 5 | 4 | 0 | 1 | 0 |
 | High | 12 | 12 | 0 | 0 | 0 |
-| Medium | 28 | 22 | 1 | 5 | 0 |
-| Low | 11 | 9 | 0 | 1 | 1 |
-| **Total** | **56** | **47** | **1** | **7** | **1** |
+| Medium | 28 | 23 | 0 | 5 | 0 |
+| Low | 11 | 10 | 0 | 1 | 0 |
+| **Total** | **56** | **49** | **0** | **7** | **0** |
 
 ### Top Active Risks
 
-1. **A4** (Low, PriorityScore 24) -- Inconsistent parameter ordering. Deferred (breaking API change).
+None. All items are Closed or Won't Do. Zero open, partial, or deferred items remain.
 
-All other items are Closed, Partial (A1 -- no action needed), or Won't Do.
+**Wave 8 closure:** A4 (parameter ordering) moved from Deferred to **Closed** -- audited 143 functions, 1 outlier (`ICUString.caseCompare`) fixed. All functions now follow consistent `allocator-first` (standalone) or `self, allocator, ...rest` (methods) convention.
+
+**Wave 7 closure:** A1 (error type duplication) moved from Partial to **Closed** -- remaining error sets are domain-specific with no meaningful overlap.
 
 **Wave 6 closure:** Q49 (6 oversized files) confirmed **Closed** -- all files split below 800 lines.
 
@@ -100,7 +102,7 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 31 | M4 | Medium | 48.0 | maintainability | build.zig 1,370-line monolith with repetitive module declarations (confirmed) | `build.zig` | [#71](https://gitlab.com/devnw/zig/strings/-/issues/71) | M | Closed |
 | 32 | D4 | Medium | 48 | api-contract | `catch 0` in parallel.zig corrupts edit-distance results silently | `src/parallel.zig:255,257` | [#65](https://gitlab.com/devnw/zig/strings/-/issues/65) | S | Closed |
 | 33 | R7 | Medium | 48 | tests | Parallel module tests only exercise sequential fallback paths | `src/parallel.zig` | [#79](https://gitlab.com/devnw/zig/strings/-/issues/79) | M | Closed |
-| 34 | A1 | Medium | 45 | maintainability | 6+ independent error type definitions across modules | Multiple | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | M | Partial |
+| 34 | A1 | Medium | 45 | maintainability | 6+ independent error type definitions across modules | Multiple | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | M | **Closed** |
 | 35 | Q17 | Medium | 45 | perf | Regex `parseNumber` overflow | `src/extended/regex.zig` | -- | S | Closed |
 | 36 | Q25 | Medium | 45 | ci-cd | No code coverage tooling | N/A | [#19](https://gitlab.com/devnw/zig/strings/-/issues/19) | M | Won't Do |
 | 37 | Q26 | Medium | 45 | tests | No fuzz testing infrastructure | N/A | [#14](https://gitlab.com/devnw/zig/strings/-/issues/14) | M | Won't Do |
@@ -115,7 +117,7 @@ Sorted by PriorityScore descending. Phase 1/2 findings prefixed Q, Phase 3 findi
 | 46 | R4 | Medium | 36 | architecture | Regex VM recursive backtracking still uses stack -- overflow risk for deep nesting | `src/extended/regex.zig:1259` | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | M | **Closed** |
 | 47 | Q27 | Low | 32.0 | docs | 49 pub fns lack doc comments (confirmed, was ~40) | Multiple | [#43](https://gitlab.com/devnw/zig/strings/-/issues/43) | M | Closed |
 | 48 | R5 | Low | 28 | architecture | `parallel.getPool()` never frees unless `deinitPool()` called | `src/parallel.zig:9-15` | [#77](https://gitlab.com/devnw/zig/strings/-/issues/77) | S | Closed |
-| 49 | A4 | Low | 24 | api-contract | Inconsistent parameter ordering (allocator first vs last) | Multiple | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | M | Open |
+| 49 | A4 | Low | 24 | api-contract | Inconsistent parameter ordering (allocator first vs last) -- 1 outlier fixed: `ICUString.caseCompare` | `src/extended/icu.zig` | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | M | **Closed** |
 | 50 | Q24 | Low | 20 | cleanup | 3 files fail `zig fmt --check` | Multiple | [#36](https://gitlab.com/devnw/zig/strings/-/issues/36) | S | Closed |
 | 51 | RM-4 | Low | 19.2 | maintainability | Duplicate import lists for `strings_mod` and `zigstr_mod` in build.zig (65 identical lines) | `build.zig:421-554` | -- | S | **Closed** |
 | 52 | D5 | Low | 16 | docs | Unicode version inconsistency (15.0 vs 15.1) in docs | `src/lib.zig:17` | [#82](https://gitlab.com/devnw/zig/strings/-/issues/82) | S | Closed |
@@ -219,7 +221,7 @@ Dead code, unused functions, formatting drift, and oversized files. **Updated Q4
 | A2 | ~~getCurrencyFormat ignores locale~~ | [#74](https://gitlab.com/devnw/zig/strings/-/issues/74) | ~~Document limitation~~ **Closed** |
 | A1 | ~~Inconsistent error types~~ | [#39](https://gitlab.com/devnw/zig/strings/-/issues/39) | ~~Merge shared variants~~ **Partial** (remaining sets are domain-specific; M3 addressed actual duplication) |
 | Q5 | ~~Regex test coverage~~ | [#38](https://gitlab.com/devnw/zig/strings/-/issues/38) | ~~Expand to 30+ targeted tests~~ **Closed** (39 tests) |
-| A4 | Inconsistent parameter ordering | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | Audit and align API conventions |
+| A4 | ~~Inconsistent parameter ordering~~ | [#76](https://gitlab.com/devnw/zig/strings/-/issues/76) | ~~Audit and align API conventions~~ **Closed** (143 functions audited; 1 outlier `ICUString.caseCompare` fixed) |
 | D3 | ~~No ADRs~~ | [#84](https://gitlab.com/devnw/zig/strings/-/issues/84) | ~~Create ADRs for top 5 design decisions~~ **Closed** |
 | Q27 | ~~49 pub fns missing doc comments~~ | [#43](https://gitlab.com/devnw/zig/strings/-/issues/43) | ~~Add `///` to all pub fns~~ **Closed** |
 | R4 | ~~Regex VM stack recursion (residual)~~ | [#25](https://gitlab.com/devnw/zig/strings/-/issues/25) | ~~Add MAX_RECURSION_DEPTH guard~~ **Closed** |

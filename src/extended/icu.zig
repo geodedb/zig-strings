@@ -286,7 +286,7 @@ pub const UnicodeString = struct {
     }
 
     /// Case-insensitive compare
-    pub fn caseCompare(self: Self, other: Self, allocator: std.mem.Allocator) !i32 {
+    pub fn caseCompare(self: Self, allocator: std.mem.Allocator, other: Self) !i32 {
         const folded_self = try self.foldCase(allocator);
         defer @constCast(&folded_self).deinit();
         const folded_other = try other.foldCase(allocator);

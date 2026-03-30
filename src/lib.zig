@@ -172,7 +172,24 @@ pub const mmap = @import("mmap");
 /// Lazy Unicode normalization
 pub const lazy_norm = @import("lazy_norm");
 
-/// Parallel string operations (spice-based)
+/// Parallel string operations (spice-based).
+///
+/// The parallel module is **opt-in by design**: callers explicitly choose
+/// parallel variants for large-input workloads. Transparent auto-dispatch
+/// was considered but rejected because parallel operations require different
+/// allocator and lifetime semantics (e.g., batch results with error sentinels)
+/// that would leak into the core API surface.
+///
+/// Available parallel operations:
+/// - `parallelCount` — count needle occurrences (threshold: 4 KB)
+/// - `parallelMap` — apply fn(T)T to each element (threshold: 64 KB)
+/// - `parallelEditDistanceBatch` — batch Levenshtein distance (threshold: 8 targets)
+/// - `parallelFuzzySearch` — batch fuzzy search (threshold: 16 candidates)
+/// - `parallelNormalize` — Unicode normalization (threshold: 64 KB)
+/// - `parallelCaseConvert` — case conversion (threshold: 64 KB)
+///
+/// Call `strings.deinit()` after all parallel work completes to release the
+/// thread pool. See `parallel.deinitPool()` for details.
 pub const parallel = @import("parallel");
 
 // ============================================================
@@ -252,6 +269,22 @@ pub const StringError = types.StringError;
 
 /// Comparison options
 pub const CompareOptions = types.CompareOptions;
+
+// ============================================================
+// Library Lifecycle
+// ============================================================
+
+/// Deinitializes all library-level resources (e.g., the spice thread pool).
+///
+/// Call this once after all string operations are complete to avoid leaking
+/// threads. It is safe to call even if no parallel operations were performed
+/// (the function is a no-op when the pool was never initialized or when
+/// spice is disabled).
+///
+/// **Warning:** Do not call while parallel operations are in-flight.
+pub fn deinit() void {
+    parallel.deinitPool();
+}
 
 // ============================================================
 // Convenience Functions

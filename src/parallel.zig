@@ -72,6 +72,21 @@ pub fn deinitPool() void {
 }
 
 // ============================================================================
+// Error Sentinel
+// ============================================================================
+
+/// Sentinel value used in parallel batch results to indicate that an individual
+/// computation failed. Parallel execution paths (edit distance, fuzzy search)
+/// cannot propagate errors from forked tasks, so failures are represented as
+/// this sentinel value in the results array.
+pub const error_sentinel: usize = std.math.maxInt(usize);
+
+/// Returns true if `score` is the error sentinel, indicating a failed computation.
+pub fn isErrorSentinel(score: usize) bool {
+    return score == error_sentinel;
+}
+
+// ============================================================================
 // Parallel Search Operations
 // ============================================================================
 
@@ -298,7 +313,9 @@ pub fn parallelMap(
 ) error{InvalidArgument}!void {
     if (input.len != output.len) return error.InvalidArgument;
 
-    if (!build_options.enable_spice or input.len < 10_485_760) {
+    // Threshold chosen to match parallelCount's scale (~4 KB base, ~64 KB for map).
+    // Map applies a simple fn(T) T per element — comparable overhead to counting.
+    if (!build_options.enable_spice or input.len < 65_536) {
         for (input, 0..) |v, i| output[i] = mapFn(v);
         return;
     }
@@ -401,9 +418,9 @@ fn ParallelEditDistanceBatchTask() type {
                     if (needed <= 8192) {
                         var buf: [8192]u8 = undefined;
                         var fba = std.heap.FixedBufferAllocator.init(&buf);
-                        results[i] = editDistance(source, target, fba.allocator()) catch std.math.maxInt(usize);
+                        results[i] = editDistance(source, target, fba.allocator()) catch error_sentinel;
                     } else {
-                        results[i] = editDistance(source, target, std.heap.page_allocator) catch std.math.maxInt(usize);
+                        results[i] = editDistance(source, target, std.heap.page_allocator) catch error_sentinel;
                     }
                 }
                 return;
@@ -535,8 +552,8 @@ fn ParallelFuzzySearchTask() type {
                     const score = if (needed <= 8192) blk: {
                         var buf: [8192]u8 = undefined;
                         var fba = std.heap.FixedBufferAllocator.init(&buf);
-                        break :blk editDistance(query, candidate, fba.allocator()) catch std.math.maxInt(usize);
-                    } else editDistance(query, candidate, std.heap.page_allocator) catch std.math.maxInt(usize);
+                        break :blk editDistance(query, candidate, fba.allocator()) catch error_sentinel;
+                    } else editDistance(query, candidate, std.heap.page_allocator) catch error_sentinel;
                     results[i] = .{
                         .index = i,
                         .score = score,
@@ -571,6 +588,316 @@ fn ParallelFuzzySearchTask() type {
             }
         }
     };
+}
+
+// ============================================================================
+// Parallel Normalization (NFC/NFD/NFKC/NFKD)
+// ============================================================================
+
+const normalization = @import("normalization");
+const case_mod = @import("case");
+const types = @import("types");
+
+/// Parallel Unicode normalization.
+///
+/// Splits the input at ASCII byte boundaries (which are always normalization-safe
+/// since ASCII codepoints have CCC=0 and cannot participate in composition), then
+/// normalizes each chunk in parallel and concatenates the results.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple threads.
+/// Each invocation allocates its own intermediate buffers.
+///
+/// Falls back to sequential normalization for inputs smaller than 64 KB or when
+/// spice is disabled.
+pub fn parallelNormalize(
+    allocator: std.mem.Allocator,
+    utf8: []const u8,
+    form: types.NormalizationForm,
+) ![]u8 {
+    // Sequential fallback for small inputs or when spice is disabled
+    if (!build_options.enable_spice or utf8.len < 65_536) {
+        return normalization.normalize(allocator, utf8, form);
+    }
+
+    // Find chunk boundaries at ASCII bytes. We need at least 2 chunks to
+    // benefit from parallelism, targeting ~4 chunks for typical workloads.
+    const target_chunks: usize = 4;
+    const chunk_size = utf8.len / target_chunks;
+
+    var boundaries: [5]usize = undefined; // max 4 chunks = 5 boundary points
+    boundaries[0] = 0;
+    var n_boundaries: usize = 1;
+
+    var i: usize = 1;
+    while (i < target_chunks and n_boundaries < 5) : (i += 1) {
+        const target_pos = i * chunk_size;
+        // Scan for an ASCII byte near the target position
+        if (findAsciiNear(utf8, target_pos, chunk_size / 2)) |pos| {
+            // Split right after the ASCII byte
+            if (pos + 1 > boundaries[n_boundaries - 1]) {
+                boundaries[n_boundaries] = pos + 1;
+                n_boundaries += 1;
+            }
+        }
+    }
+    boundaries[n_boundaries] = utf8.len;
+    n_boundaries += 1;
+    const n_chunks = n_boundaries - 1;
+
+    // Need at least 2 chunks for parallelism to be worthwhile
+    if (n_chunks < 2) {
+        return normalization.normalize(allocator, utf8, form);
+    }
+
+    // Allocate result slots for each chunk
+    const chunk_results = try allocator.alloc([]u8, n_chunks);
+    defer allocator.free(chunk_results);
+    var chunks_initialized: usize = 0;
+    errdefer for (chunk_results[0..chunks_initialized]) |cr| allocator.free(cr);
+
+    // Normalize chunks in parallel via spice fork/join
+    const NormChunkCtx = struct {
+        input: []const u8,
+        boundary_starts: []const usize,
+        boundary_ends: []const usize,
+        results: [][]u8,
+        form_val: types.NormalizationForm,
+    };
+
+    // Build start/end arrays from boundaries
+    var starts: [4]usize = undefined;
+    var ends: [4]usize = undefined;
+    for (0..n_chunks) |ci| {
+        starts[ci] = boundaries[ci];
+        ends[ci] = boundaries[ci + 1];
+    }
+
+    const pool = getPool();
+    const ctx = NormChunkCtx{
+        .input = utf8,
+        .boundary_starts = starts[0..n_chunks],
+        .boundary_ends = ends[0..n_chunks],
+        .results = chunk_results,
+        .form_val = form,
+    };
+
+    // Process chunks: use spice for first n_chunks-1, current thread for last
+    // We use a simple approach: fork all but the last chunk, do last on current thread
+    _ = pool.call(void, struct {
+        pub fn task(t: *spice.Task, c: NormChunkCtx) void {
+            if (c.results.len <= 1) {
+                // Base case: normalize single chunk
+                const chunk = c.input[c.boundary_starts[0]..c.boundary_ends[0]];
+                c.results[0] = normalization.normalize(std.heap.page_allocator, chunk, c.form_val) catch &.{};
+                return;
+            }
+
+            const mid = c.results.len / 2;
+            const left = NormChunkCtx{
+                .input = c.input,
+                .boundary_starts = c.boundary_starts[0..mid],
+                .boundary_ends = c.boundary_ends[0..mid],
+                .results = c.results[0..mid],
+                .form_val = c.form_val,
+            };
+            const right = NormChunkCtx{
+                .input = c.input,
+                .boundary_starts = c.boundary_starts[mid..],
+                .boundary_ends = c.boundary_ends[mid..],
+                .results = c.results[mid..],
+                .form_val = c.form_val,
+            };
+
+            var fut = spice.Future(NormChunkCtx, void).init();
+            fut.fork(t, task, right);
+            t.call(void, task, left);
+            if (fut.join(t) == null) {
+                t.call(void, task, right);
+            }
+        }
+    }.task, ctx);
+
+    // Calculate total output size and concatenate
+    var total_len: usize = 0;
+    for (chunk_results) |cr| {
+        total_len += cr.len;
+    }
+    chunks_initialized = n_chunks;
+
+    const result = try allocator.alloc(u8, total_len);
+    var offset: usize = 0;
+    for (chunk_results) |cr| {
+        @memcpy(result[offset..][0..cr.len], cr);
+        offset += cr.len;
+        std.heap.page_allocator.free(cr);
+    }
+    // All chunk results freed; clear to prevent errdefer double-free
+    chunks_initialized = 0;
+
+    return result;
+}
+
+/// Find an ASCII byte (< 0x80) near `target_pos` within `radius` bytes.
+fn findAsciiNear(utf8: []const u8, target_pos: usize, radius: usize) ?usize {
+    const start = if (target_pos > radius) target_pos - radius else 0;
+    const end = @min(target_pos + radius, utf8.len);
+
+    // Search outward from target position
+    var dist: usize = 0;
+    while (dist <= radius) : (dist += 1) {
+        if (target_pos + dist < end and utf8[target_pos + dist] < 0x80) {
+            return target_pos + dist;
+        }
+        if (dist > 0 and target_pos >= dist and target_pos - dist >= start) {
+            if (utf8[target_pos - dist] < 0x80) {
+                return target_pos - dist;
+            }
+        }
+    }
+    return null;
+}
+
+// ============================================================================
+// Parallel Case Conversion
+// ============================================================================
+
+/// Case conversion direction
+pub const CaseDirection = enum { lower, upper };
+
+/// Parallel case conversion (toLower/toUpper).
+///
+/// Splits the input at UTF-8 sequence boundaries and converts each chunk in
+/// parallel. Case conversion is codepoint-independent (no cross-boundary
+/// dependencies), so any UTF-8 sequence boundary is a safe split point.
+///
+/// Thread-safe: This function is safe to call concurrently from multiple threads.
+///
+/// Falls back to sequential conversion for inputs smaller than 64 KB or when
+/// spice is disabled.
+pub fn parallelCaseConvert(
+    allocator: std.mem.Allocator,
+    utf8: []const u8,
+    direction: CaseDirection,
+) ![]u8 {
+    // Sequential fallback
+    if (!build_options.enable_spice or utf8.len < 65_536) {
+        return switch (direction) {
+            .lower => case_mod.toLowerString(allocator, utf8),
+            .upper => case_mod.toUpperString(allocator, utf8),
+        };
+    }
+
+    const target_chunks: usize = 4;
+    const chunk_size = utf8.len / target_chunks;
+
+    var boundaries: [5]usize = undefined;
+    boundaries[0] = 0;
+    var n_boundaries: usize = 1;
+
+    var idx: usize = 1;
+    while (idx < target_chunks and n_boundaries < 5) : (idx += 1) {
+        var pos = idx * chunk_size;
+        // Advance to a UTF-8 sequence boundary (skip continuation bytes 10xxxxxx)
+        while (pos < utf8.len and (utf8[pos] & 0xC0) == 0x80) {
+            pos += 1;
+        }
+        if (pos > boundaries[n_boundaries - 1] and pos < utf8.len) {
+            boundaries[n_boundaries] = pos;
+            n_boundaries += 1;
+        }
+    }
+    boundaries[n_boundaries] = utf8.len;
+    n_boundaries += 1;
+    const n_chunks = n_boundaries - 1;
+
+    if (n_chunks < 2) {
+        return switch (direction) {
+            .lower => case_mod.toLowerString(allocator, utf8),
+            .upper => case_mod.toUpperString(allocator, utf8),
+        };
+    }
+
+    const chunk_results = try allocator.alloc([]u8, n_chunks);
+    defer allocator.free(chunk_results);
+    var chunks_initialized: usize = 0;
+    errdefer for (chunk_results[0..chunks_initialized]) |cr| allocator.free(cr);
+
+    const CaseChunkCtx = struct {
+        input: []const u8,
+        boundary_starts: []const usize,
+        boundary_ends: []const usize,
+        results: [][]u8,
+        dir: CaseDirection,
+    };
+
+    var starts: [4]usize = undefined;
+    var ends_arr: [4]usize = undefined;
+    for (0..n_chunks) |ci| {
+        starts[ci] = boundaries[ci];
+        ends_arr[ci] = boundaries[ci + 1];
+    }
+
+    const pool = getPool();
+    const ctx = CaseChunkCtx{
+        .input = utf8,
+        .boundary_starts = starts[0..n_chunks],
+        .boundary_ends = ends_arr[0..n_chunks],
+        .results = chunk_results,
+        .dir = direction,
+    };
+
+    _ = pool.call(void, struct {
+        pub fn task(t: *spice.Task, c: CaseChunkCtx) void {
+            if (c.results.len <= 1) {
+                const chunk = c.input[c.boundary_starts[0]..c.boundary_ends[0]];
+                c.results[0] = switch (c.dir) {
+                    .lower => case_mod.toLowerString(std.heap.page_allocator, chunk) catch &.{},
+                    .upper => case_mod.toUpperString(std.heap.page_allocator, chunk) catch &.{},
+                };
+                return;
+            }
+
+            const mid = c.results.len / 2;
+            const left = CaseChunkCtx{
+                .input = c.input,
+                .boundary_starts = c.boundary_starts[0..mid],
+                .boundary_ends = c.boundary_ends[0..mid],
+                .results = c.results[0..mid],
+                .dir = c.dir,
+            };
+            const right = CaseChunkCtx{
+                .input = c.input,
+                .boundary_starts = c.boundary_starts[mid..],
+                .boundary_ends = c.boundary_ends[mid..],
+                .results = c.results[mid..],
+                .dir = c.dir,
+            };
+
+            var fut = spice.Future(CaseChunkCtx, void).init();
+            fut.fork(t, task, right);
+            t.call(void, task, left);
+            if (fut.join(t) == null) {
+                t.call(void, task, right);
+            }
+        }
+    }.task, ctx);
+
+    var total_len: usize = 0;
+    for (chunk_results) |cr| {
+        total_len += cr.len;
+    }
+    chunks_initialized = n_chunks;
+
+    const result = try allocator.alloc(u8, total_len);
+    var offset: usize = 0;
+    for (chunk_results) |cr| {
+        @memcpy(result[offset..][0..cr.len], cr);
+        offset += cr.len;
+        std.heap.page_allocator.free(cr);
+    }
+    chunks_initialized = 0;
+
+    return result;
 }
 
 // ============================================================================
@@ -943,4 +1270,54 @@ test "sequentialCount uses countScalar for single-byte needle" {
     // Verify multi-byte still works
     try std.testing.expectEqual(@as(usize, 2), sequentialCount(u8, "abab", "ab"));
     try std.testing.expectEqual(@as(usize, 1), sequentialCount(u8, "aaa", "aa"));
+}
+
+test "error sentinel constant" {
+    try std.testing.expectEqual(std.math.maxInt(usize), error_sentinel);
+    try std.testing.expect(isErrorSentinel(error_sentinel));
+    try std.testing.expect(!isErrorSentinel(0));
+    try std.testing.expect(!isErrorSentinel(42));
+}
+
+test "findAsciiNear finds nearest ASCII byte" {
+    // Pure ASCII
+    try std.testing.expectEqual(@as(?usize, 5), findAsciiNear("hello world", 5, 3));
+
+    // UTF-8 with ASCII in the middle: "ää X ää" (ä = 0xC3 0xA4)
+    const mixed = "\xC3\xA4\xC3\xA4 X \xC3\xA4\xC3\xA4";
+    // Position 4 is the space
+    try std.testing.expectEqual(@as(?usize, 4), findAsciiNear(mixed, 4, 2));
+
+    // No ASCII in range
+    const no_ascii = "\xC3\xA4\xC3\xA4\xC3\xA4";
+    try std.testing.expectEqual(@as(?usize, null), findAsciiNear(no_ascii, 2, 3));
+}
+
+test "parallelNormalize sequential fallback matches normalize" {
+    const allocator = std.testing.allocator;
+
+    // Small input takes sequential path
+    const input = "Hello, 世界!";
+    const result = try parallelNormalize(allocator, input, .nfc);
+    defer allocator.free(result);
+    const expected = try normalization.normalize(allocator, input, .nfc);
+    defer allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, result);
+}
+
+test "parallelCaseConvert sequential fallback matches case functions" {
+    const allocator = std.testing.allocator;
+
+    const input = "Hello, WORLD! über";
+    const lower = try parallelCaseConvert(allocator, input, .lower);
+    defer allocator.free(lower);
+    const expected_lower = try case_mod.toLowerString(allocator, input);
+    defer allocator.free(expected_lower);
+    try std.testing.expectEqualStrings(expected_lower, lower);
+
+    const upper = try parallelCaseConvert(allocator, input, .upper);
+    defer allocator.free(upper);
+    const expected_upper = try case_mod.toUpperString(allocator, input);
+    defer allocator.free(expected_upper);
+    try std.testing.expectEqualStrings(expected_upper, upper);
 }

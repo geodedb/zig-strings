@@ -434,6 +434,10 @@ pub fn build(b: *std.Build) void {
     if (spice_mod) |sm| {
         parallel_mod.addImport("spice", sm);
     }
+    // Wire normalization and case modules for parallel variants
+    parallel_mod.addImport("normalization", normalization_mod);
+    parallel_mod.addImport("case", case_mod);
+    parallel_mod.addImport("types", types_mod);
 
     // ============================================================
     // Main Public API Modules
@@ -563,6 +567,9 @@ pub fn build(b: *std.Build) void {
     if (spice_mod) |sm| {
         test_parallel.root_module.addImport("spice", sm);
     }
+    test_parallel.root_module.addImport("normalization", normalization_mod);
+    test_parallel.root_module.addImport("case", case_mod);
+    test_parallel.root_module.addImport("types", types_mod);
     test_step.dependOn(&b.addRunArtifact(test_parallel).step);
 
     test_step.dependOn(&b.addRunArtifact(addLibTest(b, target, optimize, "src/extended/regex.zig", &.{

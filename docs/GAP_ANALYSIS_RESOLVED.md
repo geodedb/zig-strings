@@ -1,7 +1,7 @@
 # Gap Analysis -- Resolved Gaps
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-25 (Wave 9 closure -- GAP-0035/0036/0037, A1, A4, S26 added)
+**Last updated:** 2026-03-30 (Wave 10 closure -- GAP-0038 through GAP-0044 added)
 
 This file tracks gaps that have been resolved. Gap-IDs are never reused.
 
@@ -668,3 +668,55 @@ The following items from satellite analysis files were marked Won't Do during th
 | Wave 7 closures | 2026-03-25 | 2026-03-25 | A1 closed (error type duplication -- domain-specific, no further consolidation) |
 | Wave 8 closures | 2026-03-25 | 2026-03-25 | A4 closed (parameter ordering -- 1 outlier ICUString.caseCompare fixed) |
 | Wave 9 closures | 2026-03-25 | 2026-03-25 | GAP-0035, GAP-0036, GAP-0037 closed; RM-4, P-NEW-3, P-NEW-4, S25, Q-CI1, Q-LOC1 closed; S26 Won't Do |
+| Wave 10 closures | 2026-03-30 | 2026-03-30 | GAP-0038 through GAP-0044 closed (parallelism review: opt-in API documented, parallel normalize/case added, spice v0.1.0 tagged, threshold lowered, error sentinel named, library deinit added) |
+
+---
+
+### GAP-0038: Parallel module not integrated into public API operations (CLOSED)
+
+- **Original Severity:** High
+- **Resolution:** Closed (opt-in by design)
+- **Date:** 2026-03-30
+- **Details:** Transparent auto-dispatch was considered but rejected: parallel operations require different allocator/lifetime semantics (batch results with error sentinels, page_allocator in forked tasks) that would leak into the core API surface. Instead, the parallel module is documented prominently in `lib.zig` with an enumeration of all available parallel operations and thresholds. A library-level `strings.deinit()` was added for cleanup.
+
+### GAP-0039: No parallel normalization (NFC/NFD/NFKC/NFKD) (CLOSED)
+
+- **Original Severity:** Medium
+- **Resolution:** Closed
+- **Date:** 2026-03-30
+- **Details:** Added `parallelNormalize()` to `parallel.zig`. Splits input at ASCII byte boundaries (always normalization-safe since ASCII codepoints have CCC=0 and cannot participate in composition). Each chunk is normalized independently via spice fork/join. Threshold: 64 KB. Falls back to sequential for small inputs, pure-ASCII inputs (existing fast-path), or when no ASCII split points are found.
+
+### GAP-0040: No parallel case conversion (toLower/toUpper/toTitle) (CLOSED)
+
+- **Original Severity:** Medium
+- **Resolution:** Closed
+- **Date:** 2026-03-30
+- **Details:** Added `parallelCaseConvert()` to `parallel.zig` with a `CaseDirection` enum (.lower/.upper). Splits input at UTF-8 sequence boundaries (case conversion is codepoint-independent, so any sequence boundary is safe). Each chunk is converted independently via spice fork/join. Threshold: 64 KB.
+
+### GAP-0041: Spice dependency pinned to `main` branch (CLOSED)
+
+- **Original Severity:** Medium
+- **Resolution:** Closed
+- **Date:** 2026-03-30
+- **Details:** Created tag `v0.1.0` on the spice fork (`gitlab.com/devnw/zig/spice`). Updated `build.zig.zon` URL from `main` branch archive to `v0.1.0` tag archive. Content hash unchanged (Zig's hash is content-addressed, not path-dependent).
+
+### GAP-0042: `parallelMap` threshold too high (10 MB) (CLOSED)
+
+- **Original Severity:** Low
+- **Resolution:** Closed
+- **Date:** 2026-03-30
+- **Details:** Lowered `parallelMap` threshold from 10,485,760 bytes (10 MB) to 65,536 bytes (64 KB). The map function `fn(T) T` has comparable per-element overhead to counting, so the threshold should be in the same order of magnitude as `parallelCount`'s 4,096 bytes.
+
+### GAP-0043: Error sentinel in parallel edit distance / fuzzy search (CLOSED)
+
+- **Original Severity:** Low
+- **Resolution:** Closed
+- **Date:** 2026-03-30
+- **Details:** Added `pub const error_sentinel: usize = std.math.maxInt(usize)` as a named constant and `pub fn isErrorSentinel(score: usize) bool` as a helper function. Updated all internal usages to reference the named constant instead of the raw `std.math.maxInt(usize)` expression.
+
+### GAP-0044: No `deinitPool` integration with library-level deinit (CLOSED)
+
+- **Original Severity:** Low
+- **Resolution:** Closed
+- **Date:** 2026-03-30
+- **Details:** Added `pub fn deinit()` to `lib.zig` that calls `parallel.deinitPool()`. Safe to call even when no parallel operations were performed or when spice is disabled (no-op in both cases). Documented in the parallel module's doc comment in `lib.zig`.

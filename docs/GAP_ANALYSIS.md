@@ -1,7 +1,7 @@
 # Gap Analysis
 
 **Repository:** devnw/zig/strings
-**Last updated:** 2026-03-25 (Wave 9 closure -- 0 open gaps, GAP-0035/0036/0037 moved to RESOLVED)
+**Last updated:** 2026-03-30 (Wave 10 -- all parallelism gaps closed)
 **Analyzer:** Claude Opus 4.6 (automated gap determination)
 **Branch:** main
 **Scope:** v1.0 readiness assessment
@@ -13,9 +13,7 @@
 
 ## Gaps
 
-No open gaps remain. All items have been moved to [GAP_ANALYSIS_RESOLVED.md](GAP_ANALYSIS_RESOLVED.md).
-
-**Wave 9 closures (2026-03-25):** GAP-0035 (Unicode conformance test vectors), GAP-0036 (thread safety docs), GAP-0037 (cross-platform CI). See RESOLVED file for full details.
+_No open gaps._
 
 ---
 
@@ -29,6 +27,8 @@ No open gaps remain. All items have been moved to [GAP_ANALYSIS_RESOLVED.md](GAP
 | Low | 0 | -- |
 
 **Total open gaps: 0**
+**Closed (Wave 10, 2026-03-30):** GAP-0038 (parallel module documented as opt-in with convenience re-exports and `strings.deinit()`), GAP-0039 (parallel normalization via `parallelNormalize` with ASCII-boundary chunking), GAP-0040 (parallel case conversion via `parallelCaseConvert` with UTF-8 boundary chunking), GAP-0041 (spice pinned to v0.1.0 tag), GAP-0042 (parallelMap threshold lowered from 10 MB to 64 KB), GAP-0043 (named `error_sentinel` constant and `isErrorSentinel` helper), GAP-0044 (library-level `strings.deinit()` calls `deinitPool()`)
+**Opened (Wave 10, 2026-03-30):** GAP-0038 through GAP-0044 (7 gaps from parallelism review)
 **Closed (Wave 9):** GAP-0035 (Unicode conformance test vectors -- 33 NormalizationTest.txt + 29 GraphemeBreakTest.txt vectors; also fixed recursive decomposition bug, spacing modifier compat decomps, and GB12/GB13 RI pairing), GAP-0036 (thread safety documentation -- doc comments added to all public parallel.zig functions, ARCHITECTURE.md expanded, README.md updated), GAP-0037 (cross-compilation CI jobs for macOS x86_64/aarch64 and Windows x86_64), RM-4 (duplicate build.zig imports), P-NEW-4 (SIMD countScalar), S25 (parallelCount boundary fix), P-NEW-3 (containsIgnoreCase ASCII fast-path), Q-CI1 (CI cache), Q-LOC1 (locale tests), A4 (parameter ordering), A1 (error type duplication)
 **Won't Do (Wave 9):** S26 (CI component SHA pinning -- GitLab CI does not support SHA-based pinning; first-party control mitigates)
 **Closed (Wave 8):** A4 (parameter ordering -- 1 outlier fixed: `ICUString.caseCompare`)
@@ -57,3 +57,4 @@ No open gaps remain. All items have been moved to [GAP_ANALYSIS_RESOLVED.md](GAP
 | Wave 8 closures | 2026-03-25 | 2026-03-25 | A4 (parameter ordering -- 1 outlier `ICUString.caseCompare` fixed) |
 | GAP-0034 | 2026-03-25 | 2026-03-25 | Duplicate of S6 (Won't Do) -- not added |
 | GAP-0035 through GAP-0037 | 2026-03-25 | 2026-03-25 | Phase 3 audit: GAP-0035 (conformance tests), GAP-0036 (thread safety docs), GAP-0037 (cross-platform CI) -- all Closed in Wave 9 |
+| GAP-0038 through GAP-0044 | 2026-03-30 | 2026-03-30 | Wave 10: parallelism review -- 7 gaps opened and closed same wave |

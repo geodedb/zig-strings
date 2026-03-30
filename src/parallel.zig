@@ -15,8 +15,7 @@
 //! calling it while operations are in-flight causes undefined behavior.
 
 const std = @import("std");
-const build_options = @import("strings_build_options");
-const spice = if (build_options.enable_spice) @import("spice") else struct {
+const spice = if (true) @import("spice") else struct {
     pub const ThreadPool = void;
     pub const Task = void;
     /// Stub for spice.Future when spice is disabled.
@@ -31,7 +30,7 @@ const spice = if (build_options.enable_spice) @import("spice") else struct {
 // Global Spice Thread Pool
 // ============================================================================
 
-var global_pool: if (build_options.enable_spice) ?spice.ThreadPool else void = if (build_options.enable_spice) null else {};
+var global_pool: if (true) ?spice.ThreadPool else void = if (true) null else {};
 var pool_mutex: std.Thread.Mutex = .{};
 
 /// Get the global spice thread pool, initializing if needed.
@@ -39,8 +38,8 @@ var pool_mutex: std.Thread.Mutex = .{};
 /// Thread-safe: This function is safe to call concurrently from multiple
 /// threads. Initialization is protected by an internal mutex, ensuring
 /// the pool is created exactly once (lazy singleton pattern).
-pub fn getPool() if (build_options.enable_spice) *spice.ThreadPool else void {
-    if (!build_options.enable_spice) return;
+pub fn getPool() if (true) *spice.ThreadPool else void {
+    // spice always enabled when this module is compiled
 
     pool_mutex.lock();
     defer pool_mutex.unlock();
@@ -60,7 +59,7 @@ pub fn getPool() if (build_options.enable_spice) *spice.ThreadPool else void {
 /// completed before calling this function. Violating this invariant causes
 /// undefined behavior.
 pub fn deinitPool() void {
-    if (!build_options.enable_spice) return;
+    // spice always enabled when this module is compiled
 
     pool_mutex.lock();
     defer pool_mutex.unlock();
@@ -110,7 +109,7 @@ pub fn parallelCount(comptime T: type, haystack: []const T, needle: []const T) u
     if (haystack.len < needle.len) return 0;
 
     // Use sequential for small inputs or when spice is disabled
-    if (!build_options.enable_spice or haystack.len < 4096) {
+    if (!true or haystack.len < 4096) {
         return sequentialCount(T, haystack, needle);
     }
 
@@ -315,7 +314,7 @@ pub fn parallelMap(
 
     // Threshold chosen to match parallelCount's scale (~4 KB base, ~64 KB for map).
     // Map applies a simple fn(T) T per element — comparable overhead to counting.
-    if (!build_options.enable_spice or input.len < 65_536) {
+    if (!true or input.len < 65_536) {
         for (input, 0..) |v, i| output[i] = mapFn(v);
         return;
     }
@@ -386,7 +385,7 @@ pub fn parallelEditDistanceBatch(
 ) !void {
     if (targets.len != results.len) return error.InvalidArgument;
 
-    if (!build_options.enable_spice or targets.len < 8) {
+    if (!true or targets.len < 8) {
         for (targets, 0..) |target, i| {
             results[i] = try editDistance(source, target, allocator);
         }
@@ -517,7 +516,7 @@ pub fn parallelFuzzySearch(
 ) !void {
     if (candidates.len != results.len) return error.InvalidArgument;
 
-    if (!build_options.enable_spice or candidates.len < 16) {
+    if (!true or candidates.len < 16) {
         for (candidates, 0..) |candidate, i| {
             results[i] = .{
                 .index = i,
@@ -615,7 +614,7 @@ pub fn parallelNormalize(
     form: types.NormalizationForm,
 ) ![]u8 {
     // Sequential fallback for small inputs or when spice is disabled
-    if (!build_options.enable_spice or utf8.len < 65_536) {
+    if (!true or utf8.len < 65_536) {
         return normalization.normalize(allocator, utf8, form);
     }
 
@@ -780,7 +779,7 @@ pub fn parallelCaseConvert(
     direction: CaseDirection,
 ) ![]u8 {
     // Sequential fallback
-    if (!build_options.enable_spice or utf8.len < 65_536) {
+    if (!true or utf8.len < 65_536) {
         return switch (direction) {
             .lower => case_mod.toLowerString(allocator, utf8),
             .upper => case_mod.toUpperString(allocator, utf8),
@@ -905,7 +904,7 @@ pub fn parallelCaseConvert(
 // ============================================================================
 
 test "parallel count" {
-    if (!build_options.enable_spice) return error.SkipZigTest;
+    // spice always enabled when this module is compiled
 
     const haystack = "hello world hello world hello";
     const count = parallelCount(u8, haystack, "hello");
@@ -913,7 +912,7 @@ test "parallel count" {
 }
 
 test "parallel count large" {
-    if (!build_options.enable_spice) return error.SkipZigTest;
+    // spice always enabled when this module is compiled
 
     // Create a large string with known pattern
     const allocator = std.testing.allocator;
@@ -937,7 +936,7 @@ test "parallel count large" {
 }
 
 test "parallel map" {
-    if (!build_options.enable_spice) return error.SkipZigTest;
+    // spice always enabled when this module is compiled
 
     const input = "HELLO WORLD";
     var output: [11]u8 = undefined;
@@ -1017,7 +1016,7 @@ test "parallel fuzzy search sequential path" {
 
 test "parallelCount above threshold matches sequential" {
     // Threshold is 4096 bytes. Build input > 4096 bytes with known needle count.
-    if (!build_options.enable_spice) return error.SkipZigTest;
+    // spice always enabled when this module is compiled
 
     const allocator = std.testing.allocator;
     const needle = "FIND";
@@ -1049,7 +1048,7 @@ test "parallelCount above threshold matches sequential" {
 
 test "parallelEditDistanceBatch above threshold" {
     // Threshold is 8 targets. Use 10 targets to exercise the parallel path.
-    if (!build_options.enable_spice) return error.SkipZigTest;
+    // spice always enabled when this module is compiled
 
     const allocator = std.testing.allocator;
     const source = "kitten";
@@ -1092,7 +1091,7 @@ test "parallelEditDistanceBatch above threshold" {
 
 test "parallelFuzzySearch above threshold" {
     // Threshold is 16 candidates. Use 20 candidates to exercise the parallel path.
-    if (!build_options.enable_spice) return error.SkipZigTest;
+    // spice always enabled when this module is compiled
 
     const allocator = std.testing.allocator;
     const query = "hello";

@@ -54,9 +54,7 @@ pub fn build(b: *std.Build) void {
     const feature_unicode_data = b.option(bool, "unicode-data", "Include full Unicode data tables (default: true)") orelse true;
     const enable_spice = b.option(bool, "spice", "Enable spice-based parallelism") orelse true;
 
-    // Build options module
     const build_options = b.addOptions();
-    build_options.addOption(bool, "enable_spice", enable_spice);
     build_options.addOption(bool, "enable_simd", feature_simd);
     build_options.addOption(bool, "enable_unicode_data", feature_unicode_data);
 
@@ -423,7 +421,8 @@ pub fn build(b: *std.Build) void {
     const big5_mod = addLibModule(b, target, optimize, "big5", "src/encoding/legacy/big5.zig", &legacy_err_import);
 
     // parallel.zig - Spice-based parallel operations
-    const parallel_mod = b.addModule("parallel", .{
+    const parallel_mod: ?*std.Build.Module = if (enable_spice) blk: {
+        break :blk b.addModule("parallel", .{
         .root_source_file = b.path("src/parallel.zig"),
         .target = target,
         .optimize = optimize,
@@ -431,13 +430,14 @@ pub fn build(b: *std.Build) void {
             .{ .name = "strings_build_options", .module = build_options.createModule() },
         },
     });
-    if (spice_mod) |sm| {
-        parallel_mod.addImport("spice", sm);
+    } else null;
+    if (parallel_mod) |pm| {
+        if (spice_mod) |sm| pm.addImport("spice", sm);
+        // Wire normalization and case modules for parallel variants
+        pm.addImport("normalization", normalization_mod);
+        pm.addImport("case", case_mod);
+        pm.addImport("types", types_mod);
     }
-    // Wire normalization and case modules for parallel variants
-    parallel_mod.addImport("normalization", normalization_mod);
-    parallel_mod.addImport("case", case_mod);
-    parallel_mod.addImport("types", types_mod);
 
     // ============================================================
     // Main Public API Modules
@@ -504,7 +504,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "korean_encoding", .module = korean_encoding_mod },
         .{ .name = "big5", .module = big5_mod },
         // Parallel operations
-        .{ .name = "parallel", .module = parallel_mod },
+        
     };
 
     // zigstr.zig - New unified entry point
@@ -803,7 +803,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = .ReleaseFast,
             .imports = &.{
-                .{ .name = "parallel", .module = parallel_mod },
+                
             },
         }),
     });

@@ -428,7 +428,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "build_options", .module = build_options.createModule() },
+            .{ .name = "strings_build_options", .module = build_options.createModule() },
         },
     });
     if (spice_mod) |sm| {
@@ -562,7 +562,7 @@ pub fn build(b: *std.Build) void {
 
     // Parallel module test (special: conditional spice import)
     const test_parallel = addLibTest(b, target, optimize, "src/parallel.zig", &.{
-        .{ .name = "build_options", .module = build_options.createModule() },
+        .{ .name = "strings_build_options", .module = build_options.createModule() },
     });
     if (spice_mod) |sm| {
         test_parallel.root_module.addImport("spice", sm);

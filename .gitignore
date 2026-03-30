@@ -11,6 +11,7 @@ core
 /dist/
 /out/
 /results
+/benchmarks/results/*.json
 /.mcp.json
 /.geode_embedded/
 /data/

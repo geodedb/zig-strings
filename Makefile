@@ -5,6 +5,7 @@
 
 .PHONY: all build test test-all test-unit test-encoding test-unicode test-ops test-string test-integration
 .PHONY: clean fmt fmt-check docs dev ci help
+.PHONY: bench bench-parallel scale-bench bench-save bench-baseline bench-compare
 
 # Default target
 all: build test
@@ -65,6 +66,43 @@ test-release-fast:
 
 test-release-small:
 	zig build test -Doptimize=ReleaseSmall --summary all
+
+# =============================================================================
+# Benchmarks
+# =============================================================================
+
+# Run quick benchmarks
+bench:
+	@echo "Running benchmarks..."
+	@zig build bench -Doptimize=ReleaseFast
+
+# Run parallel operations benchmark
+bench-parallel:
+	@echo "Running parallel benchmarks..."
+	@zig build bench-parallel
+
+# Incremental scale benchmark
+scale-bench:
+	@echo "Running incremental scale benchmark..."
+	@zig build scale-bench 2>/dev/null
+
+# Run scale bench and save results per commit
+bench-save:
+	@echo "Running scale benchmark and saving results..."
+	@zig build scale-bench 2>/dev/null > benchmarks/results/$$(git rev-parse --short HEAD).json
+	@echo "Saved to benchmarks/results/$$(git rev-parse --short HEAD).json"
+
+# Save current results as the baseline
+bench-baseline:
+	@echo "Running scale benchmark and saving as baseline..."
+	@zig build scale-bench 2>/dev/null > benchmarks/results/baseline.json
+	@echo "Saved to benchmarks/results/baseline.json"
+
+# Compare current results against baseline
+bench-compare:
+	@echo "Running scale benchmark and comparing against baseline..."
+	@zig build scale-bench 2>/dev/null > /tmp/current-bench.json
+	@zig build compare-bench -- benchmarks/results/baseline.json /tmp/current-bench.json
 
 # =============================================================================
 # Code Quality
@@ -153,6 +191,14 @@ help:
 	@echo "  test-ops       Run operations tests"
 	@echo "  test-string    Run string type tests"
 	@echo "  test-integration Run integration tests"
+	@echo ""
+	@echo "Benchmark targets:"
+	@echo "  bench           Run quick benchmarks (ReleaseFast)"
+	@echo "  bench-parallel  Run parallel operations benchmark"
+	@echo "  scale-bench     Run incremental scale benchmark"
+	@echo "  bench-save      Run scale bench, save to results/<sha>.json"
+	@echo "  bench-baseline  Run scale bench, save as baseline"
+	@echo "  bench-compare   Run scale bench, compare against baseline"
 	@echo ""
 	@echo "Quality targets:"
 	@echo "  fmt            Format all source files"

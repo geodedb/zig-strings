@@ -810,6 +810,46 @@ pub fn build(b: *std.Build) void {
     const run_parallel_bench = b.addRunArtifact(parallel_bench_exe);
     parallel_bench_step.dependOn(&run_parallel_bench.step);
 
+    // Scale benchmark (JSON output for baseline tracking)
+    const scale_bench_step = b.step("scale-bench", "Run incremental scale benchmark (JSON to stdout)");
+    const scale_bench_exe = b.addExecutable(.{
+        .name = "scale_bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/scale_bench.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{ .name = "utf8", .module = utf8_mod },
+                .{ .name = "normalization", .module = normalization_mod },
+                .{ .name = "grapheme", .module = grapheme_mod },
+                .{ .name = "case", .module = case_mod },
+                .{ .name = "search", .module = search_mod },
+            },
+        }),
+    });
+    const run_scale_bench = b.addRunArtifact(scale_bench_exe);
+    if (b.args) |args| {
+        run_scale_bench.addArgs(args);
+    }
+    scale_bench_step.dependOn(&run_scale_bench.step);
+    b.installArtifact(scale_bench_exe);
+
+    // Comparison tool (baseline vs current)
+    const compare_bench_step = b.step("compare-bench", "Compare benchmark results against baseline");
+    const compare_bench_exe = b.addExecutable(.{
+        .name = "compare_bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/compare.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    const run_compare_bench = b.addRunArtifact(compare_bench_exe);
+    if (b.args) |args| {
+        run_compare_bench.addArgs(args);
+    }
+    compare_bench_step.dependOn(&run_compare_bench.step);
+
     // ============================================================
     // Format Check
     // ============================================================

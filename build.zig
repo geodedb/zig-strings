@@ -52,19 +52,19 @@ pub fn build(b: *std.Build) void {
 
     const feature_simd = b.option(bool, "simd", "Enable SIMD-accelerated operations (default: true)") orelse true;
     const feature_unicode_data = b.option(bool, "unicode-data", "Include full Unicode data tables (default: true)") orelse true;
-    const enable_spice = b.option(bool, "spice", "Enable spice-based parallelism") orelse true;
+    const enable_tp = b.option(bool, "thread-pool", "Enable thread-pool-based parallelism") orelse true;
 
     const build_options = b.addOptions();
     build_options.addOption(bool, "enable_simd", feature_simd);
     build_options.addOption(bool, "enable_unicode_data", feature_unicode_data);
 
-    // Get spice dependency if enabled
-    const spice_mod: ?*std.Build.Module = if (enable_spice) blk: {
-        const spice_dep = b.dependency("spice", .{
+    // Get thread_pool dependency if enabled
+    const tp_mod: ?*std.Build.Module = if (enable_tp) blk: {
+        const tp_dep = b.dependency("thread_pool", .{
             .target = target,
             .optimize = optimize,
         });
-        break :blk spice_dep.module("spice");
+        break :blk tp_dep.module("thread_pool");
     } else null;
 
     // ============================================================
@@ -420,19 +420,19 @@ pub fn build(b: *std.Build) void {
     const korean_encoding_mod = addLibModule(b, target, optimize, "korean_encoding", "src/encoding/legacy/korean.zig", &legacy_err_import);
     const big5_mod = addLibModule(b, target, optimize, "big5", "src/encoding/legacy/big5.zig", &legacy_err_import);
 
-    // parallel.zig - Spice-based parallel operations
-    const parallel_mod: ?*std.Build.Module = if (enable_spice) blk: {
+    // parallel.zig - thread-pool-based parallel operations
+    const parallel_mod: ?*std.Build.Module = if (enable_tp) blk: {
         break :blk b.addModule("parallel", .{
-        .root_source_file = b.path("src/parallel.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "strings_build_options", .module = build_options.createModule() },
-        },
-    });
+            .root_source_file = b.path("src/parallel.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "strings_build_options", .module = build_options.createModule() },
+            },
+        });
     } else null;
     if (parallel_mod) |pm| {
-        if (spice_mod) |sm| pm.addImport("spice", sm);
+        if (tp_mod) |tm| pm.addImport("thread_pool", tm);
         // Wire normalization and case modules for parallel variants
         pm.addImport("normalization", normalization_mod);
         pm.addImport("case", case_mod);
@@ -503,8 +503,6 @@ pub fn build(b: *std.Build) void {
         .{ .name = "japanese_encoding", .module = japanese_encoding_mod },
         .{ .name = "korean_encoding", .module = korean_encoding_mod },
         .{ .name = "big5", .module = big5_mod },
-        // Parallel operations
-        
     };
 
     // zigstr.zig - New unified entry point
@@ -522,6 +520,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &public_api_imports,
     });
+
+    // Wire parallel module into public API modules (conditional on enable_tp)
+    if (parallel_mod) |pm| {
+        zigstr_mod.addImport("parallel", pm);
+        strings_mod.addImport("parallel", pm);
+    }
 
     // ============================================================
     // Unit Tests
@@ -560,12 +564,12 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(test_lib).step);
 
-    // Parallel module test (special: conditional spice import)
+    // Parallel module test (special: conditional thread_pool import)
     const test_parallel = addLibTest(b, target, optimize, "src/parallel.zig", &.{
         .{ .name = "strings_build_options", .module = build_options.createModule() },
     });
-    if (spice_mod) |sm| {
-        test_parallel.root_module.addImport("spice", sm);
+    if (tp_mod) |tm| {
+        test_parallel.root_module.addImport("thread_pool", tm);
     }
     test_parallel.root_module.addImport("normalization", normalization_mod);
     test_parallel.root_module.addImport("case", case_mod);
@@ -802,9 +806,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("bench/parallel_bench.zig"),
             .target = target,
             .optimize = .ReleaseFast,
-            .imports = &.{
-                
-            },
+            .imports = &.{},
         }),
     });
     const run_parallel_bench = b.addRunArtifact(parallel_bench_exe);

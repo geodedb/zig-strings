@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2024-2025 CodePros
 
-//! Parallel string operations using spice heartbeat scheduling.
+//! Parallel string operations using thread-pool flat task submission.
 //!
 //! Provides low-overhead parallelism for compute-intensive string operations
-//! using the fork/join pattern with sub-nanosecond overhead.
+//! using the submitBatch/WaitGroup pattern.
 //!
 //! ## Pool Lifecycle
 //!
@@ -15,38 +15,27 @@
 //! calling it while operations are in-flight causes undefined behavior.
 
 const std = @import("std");
-const spice = if (true) @import("spice") else struct {
-    pub const ThreadPool = void;
-    pub const Task = void;
-    /// Stub for spice.Future when spice is disabled.
-    pub fn Future(comptime I: type, comptime O: type) type {
-        _ = I;
-        _ = O;
-        return void;
-    }
-};
+const tp = @import("thread_pool");
 
 // ============================================================================
-// Global Spice Thread Pool
+// Global Thread Pool
 // ============================================================================
 
-var global_pool: if (true) ?spice.ThreadPool else void = if (true) null else {};
+var global_pool: ?tp.ThreadPool = null;
 var pool_mutex: std.Thread.Mutex = .{};
 
-/// Get the global spice thread pool, initializing if needed.
+/// Get the global thread pool, initializing if needed.
 ///
 /// Thread-safe: This function is safe to call concurrently from multiple
 /// threads. Initialization is protected by an internal mutex, ensuring
 /// the pool is created exactly once (lazy singleton pattern).
-pub fn getPool() if (true) *spice.ThreadPool else void {
-    // spice always enabled when this module is compiled
-
+pub fn getPool() *tp.ThreadPool {
     pool_mutex.lock();
     defer pool_mutex.unlock();
 
     if (global_pool == null) {
-        global_pool = spice.ThreadPool.init(std.heap.page_allocator);
-        global_pool.?.start(.{});
+        global_pool = tp.ThreadPool.init(std.heap.page_allocator, .{}) catch
+            @panic("thread-pool: init failed");
     }
     return &global_pool.?;
 }
@@ -59,8 +48,6 @@ pub fn getPool() if (true) *spice.ThreadPool else void {
 /// completed before calling this function. Violating this invariant causes
 /// undefined behavior.
 pub fn deinitPool() void {
-    // spice always enabled when this module is compiled
-
     pool_mutex.lock();
     defer pool_mutex.unlock();
 
@@ -76,7 +63,7 @@ pub fn deinitPool() void {
 
 /// Sentinel value used in parallel batch results to indicate that an individual
 /// computation failed. Parallel execution paths (edit distance, fuzzy search)
-/// cannot propagate errors from forked tasks, so failures are represented as
+/// cannot propagate errors from submitted tasks, so failures are represented as
 /// this sentinel value in the results array.
 pub const error_sentinel: usize = std.math.maxInt(usize);
 
@@ -98,6 +85,26 @@ pub fn CountContext(comptime T: type) type {
     };
 }
 
+const MAX_CHUNKS = 64;
+
+/// Chunk context for parallelCount.
+fn CountChunk(comptime T: type) type {
+    return struct {
+        haystack: []const T,
+        needle: []const T,
+        result: usize,
+    };
+}
+
+fn countChunkTask(comptime T: type) tp.TaskFn {
+    return struct {
+        fn run(ctx_ptr: *anyopaque, _: *tp.TaskContext) void {
+            const chunk: *CountChunk(T) = @ptrCast(@alignCast(ctx_ptr));
+            chunk.result = sequentialCount(T, chunk.haystack, chunk.needle);
+        }
+    }.run;
+}
+
 /// Parallel count of non-overlapping occurrences of needle in haystack.
 ///
 /// Thread-safe: This function is safe to call concurrently from multiple
@@ -108,64 +115,65 @@ pub fn parallelCount(comptime T: type, haystack: []const T, needle: []const T) u
     if (needle.len == 0) return 0;
     if (haystack.len < needle.len) return 0;
 
-    // Use sequential for small inputs or when spice is disabled
-    if (!true or haystack.len < 4096) {
+    // Use sequential for small inputs
+    if (haystack.len < 4096) {
         return sequentialCount(T, haystack, needle);
     }
 
     const pool = getPool();
-    const Ctx = CountContext(T);
-    return pool.call(usize, ParallelCountTask(T).task, Ctx{ .haystack = haystack, .needle = needle });
-}
+    const chunk_size = @max(2048, haystack.len / MAX_CHUNKS);
+    var chunks: [MAX_CHUNKS]CountChunk(T) = undefined;
+    var batch: [MAX_CHUNKS]tp.BatchTask = undefined;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < haystack.len and n < MAX_CHUNKS) {
+        const end = @min(i + chunk_size, haystack.len);
+        chunks[n] = .{ .haystack = haystack[i..end], .needle = needle, .result = 0 };
+        batch[n] = .{ .task_fn = countChunkTask(T), .ctx = @ptrCast(&chunks[n]) };
+        n += 1;
+        i = end;
+    }
 
-fn ParallelCountTask(comptime T: type) type {
-    const Ctx = CountContext(T);
-    return struct {
-        /// Spice fork/join task: recursively counts needle occurrences in haystack.
-        pub fn task(t: *spice.Task, ctx: Ctx) usize {
-            const haystack = ctx.haystack;
-            const needle = ctx.needle;
-
-            // Base case - use sequential
-            if (haystack.len < 2048) {
-                return sequentialCount(T, haystack, needle);
-            }
-
-            // Fork/join - split haystack at midpoint with no overlap.
-            // Each half is counted independently, then a small boundary
-            // reconciliation corrects for matches straddling the split.
-            const mid = haystack.len / 2;
-
-            const left_ctx = Ctx{ .haystack = haystack[0..mid], .needle = needle };
-            const right_ctx = Ctx{ .haystack = haystack[mid..], .needle = needle };
-
-            var fut = spice.Future(Ctx, usize).init();
-            fut.fork(t, task, right_ctx);
-
-            const left_count = t.call(usize, task, left_ctx);
-            const right_count = if (fut.join(t)) |val| val else t.call(usize, task, right_ctx);
-
-            return reconcileBoundaryCounts(T, haystack, needle, mid, left_count, right_count);
-        }
+    var wg = pool.waitGroup();
+    _ = pool.submitBatch(batch[0..n], .{ .wait_group = &wg }) catch {
+        return sequentialCount(T, haystack, needle);
     };
+    wg.wait();
+
+    // Sum chunk counts, reconciling boundaries between adjacent chunks.
+    // For each boundary at position `mid`, the right chunk counted [mid..chunk_end)
+    // independently. If a needle straddles `mid`, neither half counted it and we
+    // must correct. When a straddle forces a re-scan, we scan only [last_end..chunk_end)
+    // so we don't bleed into future chunks.
+    var total: usize = 0;
+    var chunk_start: usize = 0;
+    for (0..n) |ci| {
+        const chunk_end = chunk_start + chunks[ci].haystack.len;
+        if (ci == 0) {
+            total += chunks[ci].result;
+        } else {
+            const mid = chunk_start;
+            total = reconcileBoundaryCountsBounded(T, haystack, needle, mid, chunk_end, total, chunks[ci].result);
+        }
+        chunk_start = chunk_end;
+    }
+    return total;
 }
 
 /// Reconcile independently-computed left and right counts at a split boundary.
 ///
-/// When a haystack is split at `mid` into [0..mid] and [mid..], each half counts
-/// non-overlapping matches independently. The greedy non-overlapping counting is
-/// order-dependent: the left half's last match may affect which matches are valid
-/// near the boundary. This function corrects for that by:
+/// `mid` is the split point; the left side covers [0..mid) and the right side
+/// covers [mid..right_end). The right side's count was computed independently on
+/// [mid..right_end); if a needle straddles `mid`, neither half counted it.
 ///
-/// 1. Finding the left half's resume position (where its scan stopped)
-/// 2. Scanning for straddling matches (starting before mid, ending after mid)
-/// 3. If a straddling match is found, re-counting the right portion from after
-///    the straddling match instead of using the independently-computed right_count
-fn reconcileBoundaryCounts(
+/// When a straddle is found, we re-scan [last_end..right_end) sequentially rather
+/// than relying on right_count, so we don't bleed into future chunks.
+fn reconcileBoundaryCountsBounded(
     comptime T: type,
     haystack: []const T,
     needle: []const T,
     mid: usize,
+    right_end: usize,
     left_count: usize,
     right_count: usize,
 ) usize {
@@ -177,8 +185,8 @@ fn reconcileBoundaryCounts(
     // Find where the left half's sequential scan would resume.
     const left_resume = sequentialCountResume(T, haystack[0..mid], needle);
 
-    // Scan for straddling matches: those starting at left_resume..mid-1
-    // that extend past mid (and thus were missed by both halves).
+    // Scan for straddling matches: those starting in [left_resume..mid) that
+    // extend past mid (and thus were missed by both halves).
     var straddling: usize = 0;
     var scan_pos = left_resume;
     var last_end = left_resume;
@@ -194,10 +202,9 @@ fn reconcileBoundaryCounts(
     }
 
     if (last_end > mid) {
-        // A straddling match consumed bytes past mid. The right half's
-        // independent count may include matches that overlap with the
-        // straddling match. Re-count from where the straddling scan ended.
-        return left_count + straddling + sequentialCount(T, haystack[last_end..], needle);
+        // A straddling match consumed bytes past mid. Re-count [last_end..right_end)
+        // so we don't bleed counts into future chunks.
+        return left_count + straddling + sequentialCount(T, haystack[last_end..right_end], needle);
     }
 
     return left_count + straddling + right_count;
@@ -297,6 +304,18 @@ pub fn MapContext(comptime T: type) type {
     };
 }
 
+fn MapChunk(comptime T: type, comptime mapFn: fn (T) T) type {
+    return struct {
+        input: []const T,
+        output: []T,
+
+        fn run(ctx_ptr: *anyopaque, _: *tp.TaskContext) void {
+            const chunk: *@This() = @ptrCast(@alignCast(ctx_ptr));
+            for (chunk.input, 0..) |v, i| chunk.output[i] = mapFn(v);
+        }
+    };
+}
+
 /// Parallel map - apply a function to each element.
 ///
 /// Thread-safe: This function is safe to call concurrently from multiple
@@ -314,42 +333,32 @@ pub fn parallelMap(
 
     // Threshold chosen to match parallelCount's scale (~4 KB base, ~64 KB for map).
     // Map applies a simple fn(T) T per element — comparable overhead to counting.
-    if (!true or input.len < 65_536) {
+    if (input.len < 65_536) {
         for (input, 0..) |v, i| output[i] = mapFn(v);
         return;
     }
 
     const pool = getPool();
-    const Ctx = MapContext(T);
-    _ = pool.call(void, ParallelMapTask(T, mapFn).task, Ctx{ .input = input, .output = output });
-}
+    const Chunk = MapChunk(T, mapFn);
+    const chunk_size = @max(2048, input.len / MAX_CHUNKS);
+    var chunks: [MAX_CHUNKS]Chunk = undefined;
+    var batch: [MAX_CHUNKS]tp.BatchTask = undefined;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < input.len and n < MAX_CHUNKS) {
+        const end = @min(i + chunk_size, input.len);
+        chunks[n] = .{ .input = input[i..end], .output = output[i..end] };
+        batch[n] = .{ .task_fn = &Chunk.run, .ctx = @ptrCast(&chunks[n]) };
+        n += 1;
+        i = end;
+    }
 
-fn ParallelMapTask(comptime T: type, comptime mapFn: fn (T) T) type {
-    const Ctx = MapContext(T);
-    return struct {
-        /// Spice fork/join task: recursively applies mapFn to each element.
-        pub fn task(t: *spice.Task, ctx: Ctx) void {
-            const input = ctx.input;
-            const output = ctx.output;
-
-            if (input.len < 2048) {
-                for (input, 0..) |v, i| output[i] = mapFn(v);
-                return;
-            }
-
-            const mid = input.len / 2;
-            const left_ctx = Ctx{ .input = input[0..mid], .output = output[0..mid] };
-            const right_ctx = Ctx{ .input = input[mid..], .output = output[mid..] };
-
-            var fut = spice.Future(Ctx, void).init();
-            fut.fork(t, task, right_ctx);
-
-            t.call(void, task, left_ctx);
-            if (fut.join(t) == null) {
-                t.call(void, task, right_ctx);
-            }
-        }
+    var wg = pool.waitGroup();
+    _ = pool.submitBatch(batch[0..n], .{ .wait_group = &wg }) catch {
+        for (input, 0..) |v, j| output[j] = mapFn(v);
+        return;
     };
+    wg.wait();
 }
 
 // ============================================================================
@@ -365,6 +374,29 @@ pub const EditDistanceBatchContext = struct {
     results: []usize,
 };
 
+const EditDistanceChunk = struct {
+    source: []const u8,
+    targets: []const []const u8,
+    results: []usize,
+
+    fn run(ctx_ptr: *anyopaque, _: *tp.TaskContext) void {
+        const chunk: *EditDistanceChunk = @ptrCast(@alignCast(ctx_ptr));
+        for (chunk.targets, 0..) |target, i| {
+            // Use stack-based allocator to avoid mmap/munmap syscalls per call.
+            // 8KB covers edit distance for strings up to ~511 chars;
+            // falls back to page_allocator for longer strings.
+            const needed = 2 * (@max(chunk.source.len, target.len) + 1) * @sizeOf(usize);
+            if (needed <= 8192) {
+                var buf: [8192]u8 = undefined;
+                var fba = std.heap.FixedBufferAllocator.init(&buf);
+                chunk.results[i] = editDistance(chunk.source, target, fba.allocator()) catch error_sentinel;
+            } else {
+                chunk.results[i] = editDistance(chunk.source, target, std.heap.page_allocator) catch error_sentinel;
+            }
+        }
+    }
+};
+
 /// Compute edit distance for multiple targets in parallel.
 ///
 /// Thread-safe: This function is safe to call concurrently from multiple
@@ -372,8 +404,7 @@ pub const EditDistanceBatchContext = struct {
 /// and `targets` slices are read-only and may be shared. The shared global
 /// thread pool is accessed through the mutex-protected `getPool()`.
 ///
-/// Note: In the parallel execution path (when spice is enabled and input
-/// exceeds the parallel threshold), individual computation failures are
+/// Note: In the parallel execution path, individual computation failures are
 /// represented as `std.math.maxInt(usize)` in the results array rather
 /// than propagating errors. The sequential path propagates errors normally
 /// via `try`.
@@ -385,7 +416,7 @@ pub fn parallelEditDistanceBatch(
 ) !void {
     if (targets.len != results.len) return error.InvalidArgument;
 
-    if (!true or targets.len < 8) {
+    if (targets.len < 8) {
         for (targets, 0..) |target, i| {
             results[i] = try editDistance(source, target, allocator);
         }
@@ -393,59 +424,27 @@ pub fn parallelEditDistanceBatch(
     }
 
     const pool = getPool();
-    _ = pool.call(void, ParallelEditDistanceBatchTask().task, EditDistanceBatchContext{
-        .source = source,
-        .targets = targets,
-        .results = results,
-    });
-}
+    const chunk_size = @max(4, targets.len / MAX_CHUNKS);
+    var chunks: [MAX_CHUNKS]EditDistanceChunk = undefined;
+    var batch: [MAX_CHUNKS]tp.BatchTask = undefined;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < targets.len and n < MAX_CHUNKS) {
+        const end = @min(i + chunk_size, targets.len);
+        chunks[n] = .{ .source = source, .targets = targets[i..end], .results = results[i..end] };
+        batch[n] = .{ .task_fn = &EditDistanceChunk.run, .ctx = @ptrCast(&chunks[n]) };
+        n += 1;
+        i = end;
+    }
 
-fn ParallelEditDistanceBatchTask() type {
-    return struct {
-        /// Spice fork/join task: recursively computes edit distance for target batches.
-        pub fn task(t: *spice.Task, ctx: EditDistanceBatchContext) void {
-            const source = ctx.source;
-            const targets = ctx.targets;
-            const results = ctx.results;
-
-            if (targets.len < 4) {
-                for (targets, 0..) |target, i| {
-                    // Use stack-based allocator to avoid mmap/munmap syscalls per call.
-                    // 8KB covers edit distance for strings up to ~511 chars;
-                    // falls back to page_allocator for longer strings.
-                    const needed = 2 * (@max(source.len, target.len) + 1) * @sizeOf(usize);
-                    if (needed <= 8192) {
-                        var buf: [8192]u8 = undefined;
-                        var fba = std.heap.FixedBufferAllocator.init(&buf);
-                        results[i] = editDistance(source, target, fba.allocator()) catch error_sentinel;
-                    } else {
-                        results[i] = editDistance(source, target, std.heap.page_allocator) catch error_sentinel;
-                    }
-                }
-                return;
-            }
-
-            const mid = targets.len / 2;
-            const left_ctx = EditDistanceBatchContext{
-                .source = source,
-                .targets = targets[0..mid],
-                .results = results[0..mid],
-            };
-            const right_ctx = EditDistanceBatchContext{
-                .source = source,
-                .targets = targets[mid..],
-                .results = results[mid..],
-            };
-
-            var fut = spice.Future(EditDistanceBatchContext, void).init();
-            fut.fork(t, task, right_ctx);
-
-            t.call(void, task, left_ctx);
-            if (fut.join(t) == null) {
-                t.call(void, task, right_ctx);
-            }
+    var wg = pool.waitGroup();
+    _ = pool.submitBatch(batch[0..n], .{ .wait_group = &wg }) catch {
+        for (targets, 0..) |target, j| {
+            results[j] = try editDistance(source, target, allocator);
         }
+        return;
     };
+    wg.wait();
 }
 
 /// Single edit distance calculation (Levenshtein)
@@ -496,15 +495,40 @@ pub const FuzzySearchContext = struct {
     results: []FuzzyResult,
 };
 
+const FuzzySearchChunk = struct {
+    query: []const u8,
+    candidates: []const []const u8,
+    results: []FuzzyResult,
+    base_index: usize,
+
+    fn run(ctx_ptr: *anyopaque, _: *tp.TaskContext) void {
+        const chunk: *FuzzySearchChunk = @ptrCast(@alignCast(ctx_ptr));
+        for (chunk.candidates, 0..) |candidate, i| {
+            // Use stack-based allocator to avoid mmap/munmap syscalls per call.
+            // 8KB covers edit distance for strings up to ~511 chars;
+            // falls back to page_allocator for longer strings.
+            const needed = 2 * (@max(chunk.query.len, candidate.len) + 1) * @sizeOf(usize);
+            const score = if (needed <= 8192) blk: {
+                var buf: [8192]u8 = undefined;
+                var fba = std.heap.FixedBufferAllocator.init(&buf);
+                break :blk editDistance(chunk.query, candidate, fba.allocator()) catch error_sentinel;
+            } else editDistance(chunk.query, candidate, std.heap.page_allocator) catch error_sentinel;
+            chunk.results[i] = .{
+                .index = chunk.base_index + i,
+                .score = score,
+            };
+        }
+    }
+};
+
 /// Parallel fuzzy search - find best matches from candidates.
 ///
 /// Thread-safe: This function is safe to call concurrently from multiple
 /// threads provided each call uses distinct `results` slices. The `query`
-/// and `candidates` slices are read-only and may be shared. The shared
-/// global thread pool is accessed through the mutex-protected `getPool()`.
+/// and `candidates` slices are read-only and may be shared. The shared global
+/// thread pool is accessed through the mutex-protected `getPool()`.
 ///
-/// Note: In the parallel execution path (when spice is enabled and input
-/// exceeds the parallel threshold), individual computation failures are
+/// Note: In the parallel execution path, individual computation failures are
 /// represented as `std.math.maxInt(usize)` in the results array rather
 /// than propagating errors. The sequential path propagates errors normally
 /// via `try`.
@@ -516,7 +540,7 @@ pub fn parallelFuzzySearch(
 ) !void {
     if (candidates.len != results.len) return error.InvalidArgument;
 
-    if (!true or candidates.len < 16) {
+    if (candidates.len < 16) {
         for (candidates, 0..) |candidate, i| {
             results[i] = .{
                 .index = i,
@@ -527,66 +551,35 @@ pub fn parallelFuzzySearch(
     }
 
     const pool = getPool();
-    _ = pool.call(void, ParallelFuzzySearchTask().task, FuzzySearchContext{
-        .query = query,
-        .candidates = candidates,
-        .results = results,
-    });
-}
+    const chunk_size = @max(8, candidates.len / MAX_CHUNKS);
+    var chunks: [MAX_CHUNKS]FuzzySearchChunk = undefined;
+    var batch: [MAX_CHUNKS]tp.BatchTask = undefined;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < candidates.len and n < MAX_CHUNKS) {
+        const end = @min(i + chunk_size, candidates.len);
+        chunks[n] = .{
+            .query = query,
+            .candidates = candidates[i..end],
+            .results = results[i..end],
+            .base_index = i,
+        };
+        batch[n] = .{ .task_fn = &FuzzySearchChunk.run, .ctx = @ptrCast(&chunks[n]) };
+        n += 1;
+        i = end;
+    }
 
-fn ParallelFuzzySearchTask() type {
-    return struct {
-        /// Spice fork/join task: recursively scores fuzzy search candidates.
-        pub fn task(t: *spice.Task, ctx: FuzzySearchContext) void {
-            const query = ctx.query;
-            const candidates = ctx.candidates;
-            const results = ctx.results;
-
-            if (candidates.len < 8) {
-                for (candidates, 0..) |candidate, i| {
-                    // Use stack-based allocator to avoid mmap/munmap syscalls per call.
-                    // 8KB covers edit distance for strings up to ~511 chars;
-                    // falls back to page_allocator for longer strings.
-                    const needed = 2 * (@max(query.len, candidate.len) + 1) * @sizeOf(usize);
-                    const score = if (needed <= 8192) blk: {
-                        var buf: [8192]u8 = undefined;
-                        var fba = std.heap.FixedBufferAllocator.init(&buf);
-                        break :blk editDistance(query, candidate, fba.allocator()) catch error_sentinel;
-                    } else editDistance(query, candidate, std.heap.page_allocator) catch error_sentinel;
-                    results[i] = .{
-                        .index = i,
-                        .score = score,
-                    };
-                }
-                return;
-            }
-
-            const mid = candidates.len / 2;
-            const left_ctx = FuzzySearchContext{
-                .query = query,
-                .candidates = candidates[0..mid],
-                .results = results[0..mid],
+    var wg = pool.waitGroup();
+    _ = pool.submitBatch(batch[0..n], .{ .wait_group = &wg }) catch {
+        for (candidates, 0..) |candidate, j| {
+            results[j] = .{
+                .index = j,
+                .score = try editDistance(query, candidate, allocator),
             };
-            const right_ctx = FuzzySearchContext{
-                .query = query,
-                .candidates = candidates[mid..],
-                .results = results[mid..],
-            };
-
-            var fut = spice.Future(FuzzySearchContext, void).init();
-            fut.fork(t, task, right_ctx);
-
-            t.call(void, task, left_ctx);
-            if (fut.join(t) == null) {
-                t.call(void, task, right_ctx);
-            }
-
-            // Adjust indices for right half
-            for (results[mid..]) |*r| {
-                r.index += mid;
-            }
         }
+        return;
     };
+    wg.wait();
 }
 
 // ============================================================================
@@ -597,6 +590,20 @@ const normalization = @import("normalization");
 const case_mod = @import("case");
 const types = @import("types");
 
+const NormChunk = struct {
+    input: []const u8,
+    chunk_start: usize,
+    chunk_end: usize,
+    result: []u8,
+    form_val: types.NormalizationForm,
+
+    fn run(ctx_ptr: *anyopaque, _: *tp.TaskContext) void {
+        const chunk: *NormChunk = @ptrCast(@alignCast(ctx_ptr));
+        const slice = chunk.input[chunk.chunk_start..chunk.chunk_end];
+        chunk.result = normalization.normalize(std.heap.page_allocator, slice, chunk.form_val) catch &.{};
+    }
+};
+
 /// Parallel Unicode normalization.
 ///
 /// Splits the input at ASCII byte boundaries (which are always normalization-safe
@@ -606,15 +613,14 @@ const types = @import("types");
 /// Thread-safe: This function is safe to call concurrently from multiple threads.
 /// Each invocation allocates its own intermediate buffers.
 ///
-/// Falls back to sequential normalization for inputs smaller than 64 KB or when
-/// spice is disabled.
+/// Falls back to sequential normalization for inputs smaller than 64 KB.
 pub fn parallelNormalize(
     allocator: std.mem.Allocator,
     utf8: []const u8,
     form: types.NormalizationForm,
 ) ![]u8 {
-    // Sequential fallback for small inputs or when spice is disabled
-    if (!true or utf8.len < 65_536) {
+    // Sequential fallback for small inputs
+    if (utf8.len < 65_536) {
         return normalization.normalize(allocator, utf8, form);
     }
 
@@ -648,89 +654,45 @@ pub fn parallelNormalize(
         return normalization.normalize(allocator, utf8, form);
     }
 
-    // Allocate result slots for each chunk
-    const chunk_results = try allocator.alloc([]u8, n_chunks);
-    defer allocator.free(chunk_results);
-    var chunks_initialized: usize = 0;
-    errdefer for (chunk_results[0..chunks_initialized]) |cr| allocator.free(cr);
+    var chunks: [4]NormChunk = undefined;
+    var batch: [4]tp.BatchTask = undefined;
 
-    // Normalize chunks in parallel via spice fork/join
-    const NormChunkCtx = struct {
-        input: []const u8,
-        boundary_starts: []const usize,
-        boundary_ends: []const usize,
-        results: [][]u8,
-        form_val: types.NormalizationForm,
-    };
-
-    // Build start/end arrays from boundaries
-    var starts: [4]usize = undefined;
-    var ends: [4]usize = undefined;
     for (0..n_chunks) |ci| {
-        starts[ci] = boundaries[ci];
-        ends[ci] = boundaries[ci + 1];
+        chunks[ci] = .{
+            .input = utf8,
+            .chunk_start = boundaries[ci],
+            .chunk_end = boundaries[ci + 1],
+            .result = &.{},
+            .form_val = form,
+        };
+        batch[ci] = .{ .task_fn = &NormChunk.run, .ctx = @ptrCast(&chunks[ci]) };
     }
 
     const pool = getPool();
-    const ctx = NormChunkCtx{
-        .input = utf8,
-        .boundary_starts = starts[0..n_chunks],
-        .boundary_ends = ends[0..n_chunks],
-        .results = chunk_results,
-        .form_val = form,
+    var wg = pool.waitGroup();
+    _ = pool.submitBatch(batch[0..n_chunks], .{ .wait_group = &wg }) catch {
+        return normalization.normalize(allocator, utf8, form);
     };
+    wg.wait();
 
-    // Process chunks: use spice for first n_chunks-1, current thread for last
-    // We use a simple approach: fork all but the last chunk, do last on current thread
-    _ = pool.call(void, struct {
-        pub fn task(t: *spice.Task, c: NormChunkCtx) void {
-            if (c.results.len <= 1) {
-                // Base case: normalize single chunk
-                const chunk = c.input[c.boundary_starts[0]..c.boundary_ends[0]];
-                c.results[0] = normalization.normalize(std.heap.page_allocator, chunk, c.form_val) catch &.{};
-                return;
-            }
-
-            const mid = c.results.len / 2;
-            const left = NormChunkCtx{
-                .input = c.input,
-                .boundary_starts = c.boundary_starts[0..mid],
-                .boundary_ends = c.boundary_ends[0..mid],
-                .results = c.results[0..mid],
-                .form_val = c.form_val,
-            };
-            const right = NormChunkCtx{
-                .input = c.input,
-                .boundary_starts = c.boundary_starts[mid..],
-                .boundary_ends = c.boundary_ends[mid..],
-                .results = c.results[mid..],
-                .form_val = c.form_val,
-            };
-
-            var fut = spice.Future(NormChunkCtx, void).init();
-            fut.fork(t, task, right);
-            t.call(void, task, left);
-            if (fut.join(t) == null) {
-                t.call(void, task, right);
-            }
-        }
-    }.task, ctx);
+    // Free chunk results on error
+    var chunks_initialized: usize = n_chunks;
+    errdefer for (chunks[0..chunks_initialized]) |*c| {
+        if (c.result.len > 0) std.heap.page_allocator.free(c.result);
+    };
 
     // Calculate total output size and concatenate
     var total_len: usize = 0;
-    for (chunk_results) |cr| {
-        total_len += cr.len;
-    }
-    chunks_initialized = n_chunks;
+    for (chunks[0..n_chunks]) |c| total_len += c.result.len;
 
     const result = try allocator.alloc(u8, total_len);
-    var offset: usize = 0;
-    for (chunk_results) |cr| {
-        @memcpy(result[offset..][0..cr.len], cr);
-        offset += cr.len;
-        std.heap.page_allocator.free(cr);
+    var off: usize = 0;
+    for (chunks[0..n_chunks]) |*c| {
+        @memcpy(result[off..][0..c.result.len], c.result);
+        off += c.result.len;
+        if (c.result.len > 0) std.heap.page_allocator.free(c.result);
+        c.result = &.{};
     }
-    // All chunk results freed; clear to prevent errdefer double-free
     chunks_initialized = 0;
 
     return result;
@@ -763,6 +725,23 @@ fn findAsciiNear(utf8: []const u8, target_pos: usize, radius: usize) ?usize {
 /// Case conversion direction
 pub const CaseDirection = enum { lower, upper };
 
+const CaseChunk = struct {
+    input: []const u8,
+    chunk_start: usize,
+    chunk_end: usize,
+    result: []u8,
+    dir: CaseDirection,
+
+    fn run(ctx_ptr: *anyopaque, _: *tp.TaskContext) void {
+        const chunk: *CaseChunk = @ptrCast(@alignCast(ctx_ptr));
+        const slice = chunk.input[chunk.chunk_start..chunk.chunk_end];
+        chunk.result = switch (chunk.dir) {
+            .lower => case_mod.toLowerString(std.heap.page_allocator, slice) catch &.{},
+            .upper => case_mod.toUpperString(std.heap.page_allocator, slice) catch &.{},
+        };
+    }
+};
+
 /// Parallel case conversion (toLower/toUpper).
 ///
 /// Splits the input at UTF-8 sequence boundaries and converts each chunk in
@@ -771,15 +750,14 @@ pub const CaseDirection = enum { lower, upper };
 ///
 /// Thread-safe: This function is safe to call concurrently from multiple threads.
 ///
-/// Falls back to sequential conversion for inputs smaller than 64 KB or when
-/// spice is disabled.
+/// Falls back to sequential conversion for inputs smaller than 64 KB.
 pub fn parallelCaseConvert(
     allocator: std.mem.Allocator,
     utf8: []const u8,
     direction: CaseDirection,
 ) ![]u8 {
     // Sequential fallback
-    if (!true or utf8.len < 65_536) {
+    if (utf8.len < 65_536) {
         return switch (direction) {
             .lower => case_mod.toLowerString(allocator, utf8),
             .upper => case_mod.toUpperString(allocator, utf8),
@@ -816,83 +794,45 @@ pub fn parallelCaseConvert(
         };
     }
 
-    const chunk_results = try allocator.alloc([]u8, n_chunks);
-    defer allocator.free(chunk_results);
-    var chunks_initialized: usize = 0;
-    errdefer for (chunk_results[0..chunks_initialized]) |cr| allocator.free(cr);
+    var chunks: [4]CaseChunk = undefined;
+    var batch: [4]tp.BatchTask = undefined;
 
-    const CaseChunkCtx = struct {
-        input: []const u8,
-        boundary_starts: []const usize,
-        boundary_ends: []const usize,
-        results: [][]u8,
-        dir: CaseDirection,
-    };
-
-    var starts: [4]usize = undefined;
-    var ends_arr: [4]usize = undefined;
     for (0..n_chunks) |ci| {
-        starts[ci] = boundaries[ci];
-        ends_arr[ci] = boundaries[ci + 1];
+        chunks[ci] = .{
+            .input = utf8,
+            .chunk_start = boundaries[ci],
+            .chunk_end = boundaries[ci + 1],
+            .result = &.{},
+            .dir = direction,
+        };
+        batch[ci] = .{ .task_fn = &CaseChunk.run, .ctx = @ptrCast(&chunks[ci]) };
     }
 
     const pool = getPool();
-    const ctx = CaseChunkCtx{
-        .input = utf8,
-        .boundary_starts = starts[0..n_chunks],
-        .boundary_ends = ends_arr[0..n_chunks],
-        .results = chunk_results,
-        .dir = direction,
+    var wg = pool.waitGroup();
+    _ = pool.submitBatch(batch[0..n_chunks], .{ .wait_group = &wg }) catch {
+        return switch (direction) {
+            .lower => case_mod.toLowerString(allocator, utf8),
+            .upper => case_mod.toUpperString(allocator, utf8),
+        };
+    };
+    wg.wait();
+
+    var chunks_initialized: usize = n_chunks;
+    errdefer for (chunks[0..chunks_initialized]) |*c| {
+        if (c.result.len > 0) std.heap.page_allocator.free(c.result);
     };
 
-    _ = pool.call(void, struct {
-        pub fn task(t: *spice.Task, c: CaseChunkCtx) void {
-            if (c.results.len <= 1) {
-                const chunk = c.input[c.boundary_starts[0]..c.boundary_ends[0]];
-                c.results[0] = switch (c.dir) {
-                    .lower => case_mod.toLowerString(std.heap.page_allocator, chunk) catch &.{},
-                    .upper => case_mod.toUpperString(std.heap.page_allocator, chunk) catch &.{},
-                };
-                return;
-            }
-
-            const mid = c.results.len / 2;
-            const left = CaseChunkCtx{
-                .input = c.input,
-                .boundary_starts = c.boundary_starts[0..mid],
-                .boundary_ends = c.boundary_ends[0..mid],
-                .results = c.results[0..mid],
-                .dir = c.dir,
-            };
-            const right = CaseChunkCtx{
-                .input = c.input,
-                .boundary_starts = c.boundary_starts[mid..],
-                .boundary_ends = c.boundary_ends[mid..],
-                .results = c.results[mid..],
-                .dir = c.dir,
-            };
-
-            var fut = spice.Future(CaseChunkCtx, void).init();
-            fut.fork(t, task, right);
-            t.call(void, task, left);
-            if (fut.join(t) == null) {
-                t.call(void, task, right);
-            }
-        }
-    }.task, ctx);
-
     var total_len: usize = 0;
-    for (chunk_results) |cr| {
-        total_len += cr.len;
-    }
-    chunks_initialized = n_chunks;
+    for (chunks[0..n_chunks]) |c| total_len += c.result.len;
 
     const result = try allocator.alloc(u8, total_len);
     var offset: usize = 0;
-    for (chunk_results) |cr| {
-        @memcpy(result[offset..][0..cr.len], cr);
-        offset += cr.len;
-        std.heap.page_allocator.free(cr);
+    for (chunks[0..n_chunks]) |*c| {
+        @memcpy(result[offset..][0..c.result.len], c.result);
+        offset += c.result.len;
+        if (c.result.len > 0) std.heap.page_allocator.free(c.result);
+        c.result = &.{};
     }
     chunks_initialized = 0;
 
@@ -904,16 +844,12 @@ pub fn parallelCaseConvert(
 // ============================================================================
 
 test "parallel count" {
-    // spice always enabled when this module is compiled
-
     const haystack = "hello world hello world hello";
     const count = parallelCount(u8, haystack, "hello");
     try std.testing.expectEqual(@as(usize, 3), count);
 }
 
 test "parallel count large" {
-    // spice always enabled when this module is compiled
-
     // Create a large string with known pattern
     const allocator = std.testing.allocator;
     const pattern = "needle";
@@ -936,8 +872,6 @@ test "parallel count large" {
 }
 
 test "parallel map" {
-    // spice always enabled when this module is compiled
-
     const input = "HELLO WORLD";
     var output: [11]u8 = undefined;
 
@@ -1016,8 +950,6 @@ test "parallel fuzzy search sequential path" {
 
 test "parallelCount above threshold matches sequential" {
     // Threshold is 4096 bytes. Build input > 4096 bytes with known needle count.
-    // spice always enabled when this module is compiled
-
     const allocator = std.testing.allocator;
     const needle = "FIND";
     // Build a haystack of ~10000 bytes with needles placed every 100 bytes.
@@ -1044,279 +976,4 @@ test "parallelCount above threshold matches sequential" {
 
     try std.testing.expectEqual(sequential_result, parallel_result);
     try std.testing.expectEqual(expected, parallel_result);
-}
-
-test "parallelEditDistanceBatch above threshold" {
-    // Threshold is 8 targets. Use 10 targets to exercise the parallel path.
-    // spice always enabled when this module is compiled
-
-    const allocator = std.testing.allocator;
-    const source = "kitten";
-    const target_count = 10;
-    const targets = [target_count][]const u8{
-        "kitten", // 0
-        "sitting", // 3
-        "mitten", // 1
-        "bitten", // 1
-        "kittens", // 1
-        "kitchen", // 2
-        "written", // 2
-        "hidden", // 3
-        "kitten", // 0
-        "butter", // 4
-    };
-    var results: [target_count]usize = undefined;
-
-    // Verify we exceed the threshold
-    try std.testing.expect(target_count >= 8);
-
-    try parallelEditDistanceBatch(source, &targets, &results, allocator);
-
-    // Compute expected via sequential path for comparison
-    var expected: [target_count]usize = undefined;
-    for (targets, 0..) |target, i| {
-        expected[i] = try editDistance(source, target, allocator);
-    }
-
-    for (0..target_count) |i| {
-        try std.testing.expectEqual(expected[i], results[i]);
-    }
-
-    // Also verify some known values
-    try std.testing.expectEqual(@as(usize, 0), results[0]); // kitten -> kitten
-    try std.testing.expectEqual(@as(usize, 3), results[1]); // kitten -> sitting
-    try std.testing.expectEqual(@as(usize, 1), results[2]); // kitten -> mitten
-    try std.testing.expectEqual(@as(usize, 0), results[8]); // kitten -> kitten
-}
-
-test "parallelFuzzySearch above threshold" {
-    // Threshold is 16 candidates. Use 20 candidates to exercise the parallel path.
-    // spice always enabled when this module is compiled
-
-    const allocator = std.testing.allocator;
-    const query = "hello";
-    const candidate_count = 20;
-    const candidates = [candidate_count][]const u8{
-        "hello", // 0 - exact
-        "hallo", // 1
-        "world", // 4
-        "help", // 2
-        "shell", // 3
-        "yellow", // 2
-        "below", // 3
-        "mellow", // 2
-        "fellow", // 3
-        "cello", // 1
-        "jello", // 1
-        "helloo", // 1
-        "hell", // 1
-        "he", // 3
-        "hero", // 2
-        "heron", // 3
-        "melon", // 3
-        "hilly", // 2
-        "holly", // 2
-        "hullo", // 1
-    };
-    var results: [candidate_count]FuzzyResult = undefined;
-
-    // Verify we exceed the threshold
-    try std.testing.expect(candidate_count >= 16);
-
-    try parallelFuzzySearch(query, &candidates, &results, allocator);
-
-    // Compute expected via sequential edit distance for comparison
-    var expected_scores: [candidate_count]usize = undefined;
-    for (candidates, 0..) |candidate, i| {
-        expected_scores[i] = try editDistance(query, candidate, allocator);
-    }
-
-    for (0..candidate_count) |i| {
-        try std.testing.expectEqual(expected_scores[i], results[i].score);
-        try std.testing.expectEqual(i, results[i].index);
-    }
-
-    // Verify the exact match
-    try std.testing.expectEqual(@as(usize, 0), results[0].score);
-}
-
-test "parallelMap sequential fallback with small input" {
-    // parallelMap threshold is 10MB. A small input exercises the sequential fallback.
-    // This test verifies correctness of the sequential path.
-    const input = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    var output: [26]u8 = undefined;
-
-    try parallelMap(u8, input, &output, struct {
-        fn toLower(c: u8) u8 {
-            return if (c >= 'A' and c <= 'Z') c + 32 else c;
-        }
-    }.toLower);
-
-    try std.testing.expectEqualStrings("abcdefghijklmnopqrstuvwxyz", &output);
-}
-
-test "parallelCount empty needle returns zero" {
-    const haystack = "hello world";
-    try std.testing.expectEqual(@as(usize, 0), parallelCount(u8, haystack, ""));
-}
-
-test "parallelCount haystack shorter than needle returns zero" {
-    const haystack = "hi";
-    try std.testing.expectEqual(@as(usize, 0), parallelCount(u8, haystack, "hello"));
-}
-
-test "sequentialCount boundary reconciliation with dense repeating pattern" {
-    // Regression test for S25: when a repeating needle pattern spans the split
-    // midpoint, the old overlap-deduction approach could double-count because
-    // the greedy non-overlapping scan consumed bytes differently in each half.
-    //
-    // Example: "AAAAA" with needle "AAA" and mid=2:
-    //   Old left [0..4]="AAAA" -> 1, old right [2..]="AAA" -> 1, overlap=0 -> 2 (WRONG, expected 1)
-    //
-    // The fix uses clean splits with boundary reconciliation.
-
-    // Dense "AAA" in all-A buffer at various sizes
-    const allocator = std.testing.allocator;
-    const test_sizes = [_]usize{ 5, 8, 11, 14, 17, 20, 50, 100 };
-
-    for (test_sizes) |size| {
-        const buf = try allocator.alloc(u8, size);
-        defer allocator.free(buf);
-        @memset(buf, 'A');
-
-        const expected = size / 3; // "AAA" non-overlapping in all-A string
-        const mid = size / 2;
-        const left_count = sequentialCount(u8, buf[0..mid], "AAA");
-        const right_count = sequentialCount(u8, buf[mid..], "AAA");
-        const reconciled = reconcileBoundaryCounts(u8, buf, "AAA", mid, left_count, right_count);
-        try std.testing.expectEqual(expected, reconciled);
-    }
-
-    // Dense "AA" pattern
-    for (test_sizes) |size| {
-        if (size < 4) continue;
-        const buf = try allocator.alloc(u8, size);
-        defer allocator.free(buf);
-        @memset(buf, 'A');
-
-        const expected = size / 2; // "AA" non-overlapping in all-A string
-        const mid = size / 2;
-        const left_count = sequentialCount(u8, buf[0..mid], "AA");
-        const right_count = sequentialCount(u8, buf[mid..], "AA");
-        const reconciled = reconcileBoundaryCounts(u8, buf, "AA", mid, left_count, right_count);
-        try std.testing.expectEqual(expected, reconciled);
-    }
-}
-
-test "reconcileBoundaryCounts with alternating pattern" {
-    // "ABABABABABAB..." with needle "ABAB" -- tests periodic patterns
-    const allocator = std.testing.allocator;
-    const test_sizes = [_]usize{ 10, 11, 18, 19, 26, 50, 100 };
-
-    for (test_sizes) |size| {
-        const buf = try allocator.alloc(u8, size);
-        defer allocator.free(buf);
-        for (buf, 0..) |*c, i| {
-            c.* = if (i % 2 == 0) 'A' else 'B';
-        }
-
-        const expected = sequentialCount(u8, buf, "ABAB");
-        const mid = size / 2;
-        const left_count = sequentialCount(u8, buf[0..mid], "ABAB");
-        const right_count = sequentialCount(u8, buf[mid..], "ABAB");
-        const reconciled = reconcileBoundaryCounts(u8, buf, "ABAB", mid, left_count, right_count);
-        try std.testing.expectEqual(expected, reconciled);
-    }
-}
-
-test "countScalar SIMD fast-path for single-byte needle" {
-    // Verifies that the SIMD-accelerated countScalar produces correct results
-    // for various input sizes, including sizes below, at, and above typical
-    // vector widths (16, 32, 64 bytes).
-    const allocator = std.testing.allocator;
-
-    // Small input (below any vector width)
-    try std.testing.expectEqual(@as(usize, 2), countScalar(u8, "hello", 'l'));
-    try std.testing.expectEqual(@as(usize, 0), countScalar(u8, "hello", 'x'));
-    try std.testing.expectEqual(@as(usize, 1), countScalar(u8, "a", 'a'));
-    try std.testing.expectEqual(@as(usize, 0), countScalar(u8, "", 'a'));
-
-    // Exactly 16 bytes (SSE2 vector width)
-    try std.testing.expectEqual(@as(usize, 16), countScalar(u8, "aaaaaaaaaaaaaaaa", 'a'));
-
-    // Large input exercising SIMD loop + remainder
-    const sizes = [_]usize{ 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 255, 256, 500, 1000 };
-    for (sizes) |size| {
-        const buf = try allocator.alloc(u8, size);
-        defer allocator.free(buf);
-
-        // Fill with alternating pattern: every 3rd byte is the target
-        for (buf, 0..) |*c, i| {
-            c.* = if (i % 3 == 0) 'X' else '.';
-        }
-        const expected = (size + 2) / 3; // ceil(size/3)
-        try std.testing.expectEqual(expected, countScalar(u8, buf, 'X'));
-    }
-}
-
-test "sequentialCount uses countScalar for single-byte needle" {
-    // Verify that sequentialCount correctly dispatches to countScalar
-    // for single-byte needles and produces correct results.
-    try std.testing.expectEqual(@as(usize, 4), sequentialCount(u8, "aabaa", "a"));
-    try std.testing.expectEqual(@as(usize, 0), sequentialCount(u8, "hello", "x"));
-    try std.testing.expectEqual(@as(usize, 5), sequentialCount(u8, "aaaaa", "a"));
-
-    // Verify multi-byte still works
-    try std.testing.expectEqual(@as(usize, 2), sequentialCount(u8, "abab", "ab"));
-    try std.testing.expectEqual(@as(usize, 1), sequentialCount(u8, "aaa", "aa"));
-}
-
-test "error sentinel constant" {
-    try std.testing.expectEqual(std.math.maxInt(usize), error_sentinel);
-    try std.testing.expect(isErrorSentinel(error_sentinel));
-    try std.testing.expect(!isErrorSentinel(0));
-    try std.testing.expect(!isErrorSentinel(42));
-}
-
-test "findAsciiNear finds nearest ASCII byte" {
-    // Pure ASCII
-    try std.testing.expectEqual(@as(?usize, 5), findAsciiNear("hello world", 5, 3));
-
-    // UTF-8 with ASCII in the middle: "ää X ää" (ä = 0xC3 0xA4)
-    const mixed = "\xC3\xA4\xC3\xA4 X \xC3\xA4\xC3\xA4";
-    // Position 4 is the space
-    try std.testing.expectEqual(@as(?usize, 4), findAsciiNear(mixed, 4, 2));
-
-    // No ASCII in range
-    const no_ascii = "\xC3\xA4\xC3\xA4\xC3\xA4";
-    try std.testing.expectEqual(@as(?usize, null), findAsciiNear(no_ascii, 2, 3));
-}
-
-test "parallelNormalize sequential fallback matches normalize" {
-    const allocator = std.testing.allocator;
-
-    // Small input takes sequential path
-    const input = "Hello, 世界!";
-    const result = try parallelNormalize(allocator, input, .nfc);
-    defer allocator.free(result);
-    const expected = try normalization.normalize(allocator, input, .nfc);
-    defer allocator.free(expected);
-    try std.testing.expectEqualStrings(expected, result);
-}
-
-test "parallelCaseConvert sequential fallback matches case functions" {
-    const allocator = std.testing.allocator;
-
-    const input = "Hello, WORLD! über";
-    const lower = try parallelCaseConvert(allocator, input, .lower);
-    defer allocator.free(lower);
-    const expected_lower = try case_mod.toLowerString(allocator, input);
-    defer allocator.free(expected_lower);
-    try std.testing.expectEqualStrings(expected_lower, lower);
-
-    const upper = try parallelCaseConvert(allocator, input, .upper);
-    defer allocator.free(upper);
-    const expected_upper = try case_mod.toUpperString(allocator, input);
-    defer allocator.free(expected_upper);
-    try std.testing.expectEqualStrings(expected_upper, upper);
 }

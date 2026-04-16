@@ -221,7 +221,7 @@ pub const Locale = struct {
         const num_str = try formatNumberWithOpts(allocator, @abs(value), num_opts);
         defer allocator.free(num_str);
 
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         // Handle negative
@@ -264,7 +264,7 @@ pub const Locale = struct {
         if (items.len == 0) return allocator.dupe(u8, "");
         if (items.len == 1) return allocator.dupe(u8, items[0]);
 
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         if (items.len == 2) {
@@ -300,7 +300,7 @@ pub const Locale = struct {
         style: enum { short, medium, long, full },
     ) ![]u8 {
         _ = self;
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         switch (style) {
@@ -344,7 +344,7 @@ fn formatNumberWithOpts(allocator: std.mem.Allocator, value: f64, opts: NumberFo
     // and would cause undefined behavior in @intFromFloat below.
     if (std.math.isNan(value) or std.math.isInf(value)) return error.InvalidNumber;
 
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     const is_negative = value < 0;

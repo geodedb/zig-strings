@@ -162,7 +162,7 @@ pub const Regex = struct {
     /// Replace first match
     pub fn replaceFirst(self: Self, allocator: std.mem.Allocator, input: []const u8, replacement: []const u8) ![]u8 {
         if (self.find(input)) |m| {
-            var result: std.ArrayListUnmanaged(u8) = .{};
+            var result: std.ArrayListUnmanaged(u8) = .empty;
             errdefer result.deinit(allocator);
 
             try result.appendSlice(allocator, input[0..m.start]);
@@ -176,7 +176,7 @@ pub const Regex = struct {
 
     /// Replace all matches
     pub fn replaceAll(self: Self, allocator: std.mem.Allocator, input: []const u8, replacement: []const u8) ![]u8 {
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         var last_end: usize = 0;
@@ -194,7 +194,7 @@ pub const Regex = struct {
 
     /// Split input by pattern
     pub fn split(self: Self, allocator: std.mem.Allocator, input: []const u8) ![][]const u8 {
-        var parts: std.ArrayListUnmanaged([]const u8) = .{};
+        var parts: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer parts.deinit(allocator);
 
         var last_end: usize = 0;

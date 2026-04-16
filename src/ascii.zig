@@ -203,7 +203,7 @@ pub fn parseSigned(comptime T: type, bytes: []const u8) ?T {
 
     if (start >= bytes.len) return null;
 
-    const UnsignedT = @Type(.{ .int = .{ .signedness = .unsigned, .bits = @typeInfo(T).int.bits } });
+    const UnsignedT = std.meta.Int(.unsigned, @typeInfo(T).int.bits);
     const unsigned = parseUnsigned(UnsignedT, bytes[start..]) orelse return null;
 
     if (negative) {

@@ -116,7 +116,7 @@ pub fn refinedSoundex(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         return allocator.dupe(u8, "");
     }
 
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var last_code: u8 = 0;
@@ -160,11 +160,11 @@ pub fn nysiis(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         return allocator.dupe(u8, "");
     }
 
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     // Convert to uppercase
-    var word: std.ArrayListUnmanaged(u8) = .{};
+    var word: std.ArrayListUnmanaged(u8) = .empty;
     defer word.deinit(allocator);
 
     for (input) |c| {
@@ -246,11 +246,11 @@ pub fn matchRating(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         return allocator.dupe(u8, "");
     }
 
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     // Convert to uppercase and remove non-alphabetic
-    var word: std.ArrayListUnmanaged(u8) = .{};
+    var word: std.ArrayListUnmanaged(u8) = .empty;
     defer word.deinit(allocator);
 
     for (input) |c| {
@@ -293,11 +293,11 @@ pub fn caverphone(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         return allocator.dupe(u8, "1111111111");
     }
 
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     // Convert to lowercase and extract letters
-    var word: std.ArrayListUnmanaged(u8) = .{};
+    var word: std.ArrayListUnmanaged(u8) = .empty;
     defer word.deinit(allocator);
 
     for (input) |c| {

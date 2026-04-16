@@ -89,7 +89,9 @@ pub const StringBuilder = struct {
 
     /// Appends a formatted string
     pub fn appendFmt(self: *StringBuilder, comptime fmt: []const u8, args: anytype) !void {
-        try self.buffer.writer(self.allocator).print(fmt, args);
+        const formatted = try std.fmt.allocPrint(self.allocator, fmt, args);
+        defer self.allocator.free(formatted);
+        try self.buffer.appendSlice(self.allocator, formatted);
     }
 
     /// Appends a line (string + newline)
@@ -100,12 +102,16 @@ pub const StringBuilder = struct {
 
     /// Appends an integer
     pub fn appendInt(self: *StringBuilder, value: anytype) !void {
-        try self.buffer.writer(self.allocator).print("{}", .{value});
+        const formatted = try std.fmt.allocPrint(self.allocator, "{}", .{value});
+        defer self.allocator.free(formatted);
+        try self.buffer.appendSlice(self.allocator, formatted);
     }
 
     /// Appends a float
     pub fn appendFloat(self: *StringBuilder, value: anytype) !void {
-        try self.buffer.writer(self.allocator).print("{d}", .{value});
+        const formatted = try std.fmt.allocPrint(self.allocator, "{d}", .{value});
+        defer self.allocator.free(formatted);
+        try self.buffer.appendSlice(self.allocator, formatted);
     }
 
     /// Clears the builder
@@ -144,9 +150,9 @@ pub const StringBuilder = struct {
         try self.buffer.ensureUnusedCapacity(self.allocator, additional);
     }
 
-    /// Returns a writer interface
-    pub fn writer(self: *StringBuilder) std.ArrayList(u8).Writer {
-        return self.buffer.writer(self.allocator);
+    /// Returns a reference to the underlying buffer for direct manipulation
+    pub fn getBuffer(self: *StringBuilder) *std.ArrayList(u8) {
+        return &self.buffer;
     }
 
     /// Replaces all occurrences of old with new

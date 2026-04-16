@@ -124,7 +124,7 @@ pub const UnicodeString = struct {
     /// Create empty string
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
-            .data = .{},
+            .data = .empty,
             .allocator = allocator,
         };
     }
@@ -190,7 +190,7 @@ pub const UnicodeString = struct {
 
     /// Convert to UTF-8
     pub fn toUtf8String(self: Self, allocator: std.mem.Allocator) ![]u8 {
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         var i: usize = 0;
@@ -624,7 +624,7 @@ pub fn u_strFromUTF8(
     allocator: std.mem.Allocator,
     src: []const u8,
 ) ![]u16 {
-    var result: std.ArrayListUnmanaged(u16) = .{};
+    var result: std.ArrayListUnmanaged(u16) = .empty;
     errdefer result.deinit(allocator);
 
     var iter = std.unicode.Utf8Iterator{ .bytes = src, .i = 0 };
@@ -646,7 +646,7 @@ pub fn u_strToUTF8(
     allocator: std.mem.Allocator,
     src: []const u16,
 ) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;

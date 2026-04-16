@@ -62,7 +62,7 @@ pub const EncodingError = legacy_errors.LegacyEncodingError;
 /// - Rows 16-40: 2,350 Hangul syllables (KS C 5601)
 /// - Rows 42-93: 4,888 Hanja (Chinese characters)
 fn decodeEUCKR(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -94,7 +94,7 @@ fn decodeEUCKR(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeEUCKR(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -143,7 +143,7 @@ fn encodeEUCKR(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 ///
 /// CP949 covers all 11,172 modern Hangul syllables (U+AC00-U+D7A3)
 fn decodeCP949(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -191,7 +191,7 @@ fn decodeCP949(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeCP949(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -595,8 +595,7 @@ const ksx1001_hangul = [_]u21{
     0xACB0, 0xACB8, 0xACB9, 0xACBB, 0xACBC, 0xACBD, 0xACC1, 0xACC4,
     0xACC8, 0xACCC, 0xACD5, 0xACD7, 0xACE0, 0xACE1, 0xACE4, 0xACE7,
     0xACE8, 0xACEA, 0xACEC, 0xACEF, 0xACF0, 0xACF1, 0xACF3, 0xACF5,
-    0xACF6, 0xACFC, 0xACFD, 0xAD00, 0xAD04,
-    0xAD06,
+    0xACF6, 0xACFC, 0xACFD, 0xAD00, 0xAD04, 0xAD06,
     // Continue with more Hangul...
 };
 
@@ -611,8 +610,7 @@ const ksx1001_hanja = [_]u21{
     0x4EBA, 0x5E74, 0x6708, 0x65E5, 0x6642, 0x5206, 0x79D2, 0x5929,
     0x5730, 0x4E0A, 0x4E0B, 0x524D, 0x5F8C, 0x5DE6, 0x53F3, 0x6771,
     0x897F, 0x5357, 0x5317, 0x5185, 0x5916, 0x9AD8, 0x4F4E, 0x65B0,
-    0x820A, 0x767D, 0x9ED1, 0x8D64, 0x9752, 0x9EC3, 0x7DA0,
-    0x7D2B,
+    0x820A, 0x767D, 0x9ED1, 0x8D64, 0x9752, 0x9EC3, 0x7DA0, 0x7D2B,
     // Continue with more Hanja...
 };
 
@@ -621,8 +619,7 @@ const ksx1001_hanja = [_]u21{
 const cp949_hangul = [_]u21{
     // Extended Hangul syllables not in KS X 1001
     0xAC02, 0xAC03, 0xAC05, 0xAC06, 0xAC0B, 0xAC0C, 0xAC0D, 0xAC0E,
-    0xAC0F, 0xAC18, 0xAC1E, 0xAC1F, 0xAC21, 0xAC22, 0xAC23,
-    0xAC25,
+    0xAC0F, 0xAC18, 0xAC1E, 0xAC1F, 0xAC21, 0xAC22, 0xAC23, 0xAC25,
     // Continue with more extended Hangul...
 };
 

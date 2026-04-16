@@ -68,7 +68,7 @@ pub const EncodingError = legacy_errors.LegacyEncodingError;
 /// 0xC940-0xF9D5: Level 2 characters
 /// 0xF9D6-0xFEFE: Reserved/user-defined
 fn decodeBig5(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -100,7 +100,7 @@ fn decodeBig5(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeBig5(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -144,7 +144,7 @@ fn encodeBig5(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 /// Big5-HKSCS (Hong Kong Supplementary Character Set)
 /// Extends Big5 with additional characters for Cantonese
 fn decodeBig5HKSCS(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -180,7 +180,7 @@ fn decodeBig5HKSCS(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeBig5HKSCS(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;

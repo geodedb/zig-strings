@@ -20,6 +20,13 @@ const search = @import("search");
 
 const print = std.debug.print;
 
+/// Return the current monotonic timestamp in nanoseconds.
+fn nowNs() u64 {
+    const _io = std.Io.Threaded.global_single_threaded.io();
+    const ts = std.Io.Timestamp.now(_io, .awake);
+    return @intCast(@max(0, ts.nanoseconds));
+}
+
 // ---------------------------------------------------------------------------
 // Scale tier definitions
 // ---------------------------------------------------------------------------
@@ -100,79 +107,79 @@ fn calcThroughputMbS(bytes: usize, iterations: usize, elapsed_ns: u64) f64 {
 // ---------------------------------------------------------------------------
 
 fn benchUtf8Validate(input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         std.mem.doNotOptimizeAway(utf8_mod.isValid(input));
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchNormalizeNfc(allocator: std.mem.Allocator, input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         const result = normalization.normalize(allocator, input, .nfc) catch return 0;
         allocator.free(result);
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchNormalizeNfd(allocator: std.mem.Allocator, input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         const result = normalization.normalize(allocator, input, .nfd) catch return 0;
         allocator.free(result);
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchCaseLower(allocator: std.mem.Allocator, input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         const result = case.toLowerString(allocator, input) catch return 0;
         allocator.free(result);
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchCaseUpper(allocator: std.mem.Allocator, input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         const result = case.toUpperString(allocator, input) catch return 0;
         allocator.free(result);
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchGraphemeCount(input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         std.mem.doNotOptimizeAway(grapheme.count(input));
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchCount(input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         std.mem.doNotOptimizeAway(search.count(input, bench_needle));
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 fn benchSearch(input: []const u8, iterations: usize) f64 {
-    var timer = std.time.Timer.start() catch return 0;
+    const start = nowNs();
     for (0..iterations) |_| {
         std.mem.doNotOptimizeAway(search.contains(input, bench_needle));
     }
-    return calcThroughputMbS(input.len, iterations, timer.read());
+    return calcThroughputMbS(input.len, iterations, nowNs() - start);
 }
 
 // ---------------------------------------------------------------------------
 // Tier execution
 // ---------------------------------------------------------------------------
 
-fn checkTimeout(tier_start: u64, timer: *std.time.Timer) bool {
-    return (timer.read() - tier_start) > TIER_TIMEOUT_NS;
+fn checkTimeout(tier_start: u64) bool {
+    return (nowNs() - tier_start) > TIER_TIMEOUT_NS;
 }
 
 fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
@@ -188,12 +195,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     };
     defer allocator.free(input);
 
-    var timer = std.time.Timer.start() catch {
-        result.skipped = true;
-        result.skip_reason = "timer unavailable";
-        return result;
-    };
-    const tier_start = timer.read();
+    const tier_start = nowNs();
     const iters = tier.iterations;
 
     print("  Running tier {s} ({d} bytes, {d} iterations)...\n", .{ tier.name, tier.target_bytes, iters });
@@ -201,7 +203,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // UTF-8 validation
     result.utf8_validate_mb_s = benchUtf8Validate(input, iters);
     print("    utf8_validate:    {d:>10.1} MB/s\n", .{result.utf8_validate_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -210,7 +212,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // NFC normalization
     result.normalize_nfc_mb_s = benchNormalizeNfc(allocator, input, iters);
     print("    normalize_nfc:    {d:>10.1} MB/s\n", .{result.normalize_nfc_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -219,7 +221,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // NFD normalization
     result.normalize_nfd_mb_s = benchNormalizeNfd(allocator, input, iters);
     print("    normalize_nfd:    {d:>10.1} MB/s\n", .{result.normalize_nfd_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -228,7 +230,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // Case lower
     result.case_lower_mb_s = benchCaseLower(allocator, input, iters);
     print("    case_lower:       {d:>10.1} MB/s\n", .{result.case_lower_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -237,7 +239,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // Case upper
     result.case_upper_mb_s = benchCaseUpper(allocator, input, iters);
     print("    case_upper:       {d:>10.1} MB/s\n", .{result.case_upper_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -246,7 +248,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // Grapheme counting
     result.grapheme_count_mb_s = benchGraphemeCount(input, iters);
     print("    grapheme_count:   {d:>10.1} MB/s\n", .{result.grapheme_count_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -255,7 +257,7 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
     // Count
     result.count_mb_s = benchCount(input, iters);
     print("    count:            {d:>10.1} MB/s\n", .{result.count_mb_s});
-    if (checkTimeout(tier_start, &timer)) {
+    if (checkTimeout(tier_start)) {
         result.skipped = true;
         result.skip_reason = "timeout";
         return result;
@@ -269,48 +271,26 @@ fn runTier(tier: Tier, allocator: std.mem.Allocator) TierResult {
 }
 
 // ---------------------------------------------------------------------------
-// Stdout writer (buffered, for JSON output)
-// ---------------------------------------------------------------------------
-
-const StdoutWriter = struct {
-    file: std.fs.File,
-    buf: [8192]u8 = undefined,
-    writer: ?std.fs.File.Writer = null,
-
-    fn open(self: *StdoutWriter) void {
-        self.writer = self.file.writer(&self.buf);
-    }
-
-    fn writeAll(self: *StdoutWriter, data: []const u8) !void {
-        try self.writer.?.interface.writeAll(data);
-    }
-
-    fn writeFmt(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
-        try self.writer.?.interface.print(fmt, args);
-    }
-
-    fn flush(self: *StdoutWriter) !void {
-        try self.writer.?.interface.flush();
-    }
-};
-
-// ---------------------------------------------------------------------------
 // JSON output to stdout
 // ---------------------------------------------------------------------------
 
-fn writeJsonOutput(out: *StdoutWriter, results: []const TierResult) !void {
-    try out.writeAll("{\n");
-    try out.writeAll("  \"version\": 1,\n");
+fn writeJsonOutput(init: std.process.Init, results: []const TierResult) !void {
+    const file = std.Io.File.stdout();
+    var buf: [8192]u8 = undefined;
+    var w = file.writerStreaming(init.io, &buf);
+
+    try w.interface.writeAll("{\n");
+    try w.interface.writeAll("  \"version\": 1,\n");
 
     // Timestamp
-    const ts = std.time.timestamp();
-    const epoch_secs: u64 = @intCast(ts);
+    const ts = std.Io.Timestamp.now(init.io, .real);
+    const epoch_secs: u64 = @intCast(@max(0, @divFloor(ts.nanoseconds, std.time.ns_per_s)));
     const es = std.time.epoch.EpochSeconds{ .secs = epoch_secs };
     const day_secs = es.getDaySeconds();
     const year_day = es.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
 
-    try out.writeFmt("  \"timestamp\": \"{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\",\n", .{
+    try w.interface.print("  \"timestamp\": \"{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\",\n", .{
         year_day.year,
         month_day.month.numeric(),
         month_day.day_index + 1,
@@ -319,43 +299,43 @@ fn writeJsonOutput(out: *StdoutWriter, results: []const TierResult) !void {
         day_secs.getSecondsIntoMinute(),
     });
 
-    try out.writeAll("  \"git_commit\": \"unknown\",\n");
+    try w.interface.writeAll("  \"git_commit\": \"unknown\",\n");
 
     // System info
-    try out.writeFmt("  \"system\": {{ \"os\": \"{s}\", \"arch\": \"{s}\" }},\n", .{
+    try w.interface.print("  \"system\": {{ \"os\": \"{s}\", \"arch\": \"{s}\" }},\n", .{
         @tagName(builtin.os.tag),
         @tagName(builtin.cpu.arch),
     });
 
     // Tiers
-    try out.writeAll("  \"tiers\": [\n");
+    try w.interface.writeAll("  \"tiers\": [\n");
     for (results, 0..) |r, i| {
-        try out.writeAll("    {\n");
-        try out.writeFmt("      \"name\": \"{s}\",\n", .{r.name});
-        try out.writeFmt("      \"input_bytes\": {d},\n", .{r.input_bytes});
+        try w.interface.writeAll("    {\n");
+        try w.interface.print("      \"name\": \"{s}\",\n", .{r.name});
+        try w.interface.print("      \"input_bytes\": {d},\n", .{r.input_bytes});
         if (r.skipped) {
-            try out.writeAll("      \"skipped\": true,\n");
+            try w.interface.writeAll("      \"skipped\": true,\n");
             if (r.skip_reason) |reason| {
-                try out.writeFmt("      \"skip_reason\": \"{s}\",\n", .{reason});
+                try w.interface.print("      \"skip_reason\": \"{s}\",\n", .{reason});
             }
         }
-        try out.writeFmt("      \"utf8_validate_mb_s\": {d:.1},\n", .{r.utf8_validate_mb_s});
-        try out.writeFmt("      \"normalize_nfc_mb_s\": {d:.1},\n", .{r.normalize_nfc_mb_s});
-        try out.writeFmt("      \"normalize_nfd_mb_s\": {d:.1},\n", .{r.normalize_nfd_mb_s});
-        try out.writeFmt("      \"case_lower_mb_s\": {d:.1},\n", .{r.case_lower_mb_s});
-        try out.writeFmt("      \"case_upper_mb_s\": {d:.1},\n", .{r.case_upper_mb_s});
-        try out.writeFmt("      \"grapheme_count_mb_s\": {d:.1},\n", .{r.grapheme_count_mb_s});
-        try out.writeFmt("      \"count_mb_s\": {d:.1},\n", .{r.count_mb_s});
-        try out.writeFmt("      \"search_mb_s\": {d:.1}\n", .{r.search_mb_s});
+        try w.interface.print("      \"utf8_validate_mb_s\": {d:.1},\n", .{r.utf8_validate_mb_s});
+        try w.interface.print("      \"normalize_nfc_mb_s\": {d:.1},\n", .{r.normalize_nfc_mb_s});
+        try w.interface.print("      \"normalize_nfd_mb_s\": {d:.1},\n", .{r.normalize_nfd_mb_s});
+        try w.interface.print("      \"case_lower_mb_s\": {d:.1},\n", .{r.case_lower_mb_s});
+        try w.interface.print("      \"case_upper_mb_s\": {d:.1},\n", .{r.case_upper_mb_s});
+        try w.interface.print("      \"grapheme_count_mb_s\": {d:.1},\n", .{r.grapheme_count_mb_s});
+        try w.interface.print("      \"count_mb_s\": {d:.1},\n", .{r.count_mb_s});
+        try w.interface.print("      \"search_mb_s\": {d:.1}\n", .{r.search_mb_s});
         if (i < results.len - 1) {
-            try out.writeAll("    },\n");
+            try w.interface.writeAll("    },\n");
         } else {
-            try out.writeAll("    }\n");
+            try w.interface.writeAll("    }\n");
         }
     }
-    try out.writeAll("  ]\n");
-    try out.writeAll("}\n");
-    try out.flush();
+    try w.interface.writeAll("  ]\n");
+    try w.interface.writeAll("}\n");
+    try w.flush();
 }
 
 // ---------------------------------------------------------------------------
@@ -425,12 +405,12 @@ fn writeSummary(results: []const TierResult) void {
 // Main
 // ---------------------------------------------------------------------------
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     const allocator = std.heap.page_allocator;
 
     // Parse optional tier limit argument
     var max_tiers: usize = tiers.len;
-    var args = std.process.args();
+    var args = std.process.Args.Iterator.init(init.minimal.args);
     _ = args.next(); // program name
     if (args.next()) |arg| {
         max_tiers = std.fmt.parseInt(usize, arg, 10) catch tiers.len;
@@ -465,7 +445,5 @@ pub fn main() !void {
     writeSummary(results[0..max_tiers]);
 
     // Write JSON to stdout
-    var out = StdoutWriter{ .file = .{ .handle = std.posix.STDOUT_FILENO } };
-    out.open();
-    try writeJsonOutput(&out, &results);
+    try writeJsonOutput(init, &results);
 }

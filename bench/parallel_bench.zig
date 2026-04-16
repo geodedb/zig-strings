@@ -1,12 +1,19 @@
 //! ZigStr Parallel Operations Benchmark
 //!
-//! Compares sequential vs spice-parallel string operations.
+//! Compares sequential vs thread-pool-parallel string operations.
 
 const std = @import("std");
 const parallel = @import("parallel");
 
 const WARMUP_RUNS = 3;
 const BENCH_RUNS = 5;
+
+/// Return the current monotonic timestamp in nanoseconds.
+fn nowNs() u64 {
+    const _io = std.Io.Threaded.global_single_threaded.io();
+    const ts = std.Io.Timestamp.now(_io, .awake);
+    return @intCast(@max(0, ts.nanoseconds));
+}
 
 const BenchResult = struct {
     seq_ns: u64,
@@ -79,18 +86,18 @@ fn benchParallelCount(allocator: std.mem.Allocator, size: usize) !BenchResult {
     // Benchmark sequential
     var seq_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
-        var timer = try std.time.Timer.start();
+        const start = nowNs();
         const result = sequentialCount(haystack, pattern);
-        seq_total += timer.read();
+        seq_total += nowNs() - start;
         std.mem.doNotOptimizeAway(&result);
     }
 
     // Benchmark parallel
     var par_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
-        var timer = try std.time.Timer.start();
+        const start = nowNs();
         const result = parallel.parallelCount(u8, haystack, pattern);
-        par_total += timer.read();
+        par_total += nowNs() - start;
         std.mem.doNotOptimizeAway(&result);
     }
 
@@ -119,18 +126,18 @@ fn benchParallelMap(allocator: std.mem.Allocator, size: usize) !BenchResult {
     // Benchmark sequential
     var seq_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
-        var timer = try std.time.Timer.start();
+        const start = nowNs();
         sequentialMap(input, output_seq, toLower);
-        seq_total += timer.read();
+        seq_total += nowNs() - start;
         std.mem.doNotOptimizeAway(output_seq.ptr);
     }
 
     // Benchmark parallel
     var par_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
-        var timer = try std.time.Timer.start();
+        const start = nowNs();
         parallel.parallelMap(u8, input, output_par, toLower) catch {};
-        par_total += timer.read();
+        par_total += nowNs() - start;
         std.mem.doNotOptimizeAway(output_par.ptr);
     }
 
@@ -148,9 +155,9 @@ fn benchEditDistanceBatch(allocator: std.mem.Allocator, num_targets: usize) !Ben
     defer allocator.free(target_storage);
 
     for (targets, 0..) |*t, i| {
-        const start = i * 60;
-        const end = @min(start + 55, target_storage.len);
-        const slice = target_storage[start..end];
+        const start_off = i * 60;
+        const end = @min(start_off + 55, target_storage.len);
+        const slice = target_storage[start_off..end];
         @memcpy(slice[0..@min(source.len, slice.len)], source[0..@min(source.len, slice.len)]);
         // Add variation
         if (slice.len > 5) slice[5] = @intCast('a' + @mod(i, 26));
@@ -163,11 +170,11 @@ fn benchEditDistanceBatch(allocator: std.mem.Allocator, num_targets: usize) !Ben
     // Sequential edit distance
     var seq_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
-        var timer = try std.time.Timer.start();
+        const start = nowNs();
         for (targets, 0..) |target, i| {
             results[i] = editDistanceSimple(source, target);
         }
-        seq_total += timer.read();
+        seq_total += nowNs() - start;
         std.mem.doNotOptimizeAway(results.ptr);
     }
 
@@ -175,14 +182,14 @@ fn benchEditDistanceBatch(allocator: std.mem.Allocator, num_targets: usize) !Ben
     // For now, use the same sequential as baseline
     var par_total: u64 = 0;
     for (0..BENCH_RUNS) |_| {
-        var timer = try std.time.Timer.start();
+        const start = nowNs();
         parallel.parallelEditDistanceBatch(source, targets, results, allocator) catch {
             // Fallback to sequential on error
             for (targets, 0..) |target, i| {
                 results[i] = editDistanceSimple(source, target);
             }
         };
-        par_total += timer.read();
+        par_total += nowNs() - start;
         std.mem.doNotOptimizeAway(results.ptr);
     }
 
@@ -230,13 +237,13 @@ fn printBenchResult(name: []const u8, size: usize, result: BenchResult) void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     std.debug.print("\n", .{});
     std.debug.print("========================================================================\n", .{});
-    std.debug.print("        Strings Library - Spice Parallel Operations Benchmark          \n", .{});
+    std.debug.print("        Strings Library - Parallel Operations Benchmark                 \n", .{});
     std.debug.print("========================================================================\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Warmup: {d} runs, Benchmark: {d} runs (averaged)\n", .{ WARMUP_RUNS, BENCH_RUNS });

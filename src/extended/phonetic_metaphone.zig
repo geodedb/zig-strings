@@ -41,11 +41,11 @@ pub fn metaphone(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         return allocator.dupe(u8, "");
     }
 
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     // Convert to uppercase and extract letters only
-    var word: std.ArrayListUnmanaged(u8) = .{};
+    var word: std.ArrayListUnmanaged(u8) = .empty;
     defer word.deinit(allocator);
 
     for (input) |c| {
@@ -249,7 +249,7 @@ pub fn doubleMetaphone(allocator: std.mem.Allocator, input: []const u8) !DoubleM
     }
 
     const alternate: ?[]const u8 = if (has_alternate) blk: {
-        var alt: std.ArrayListUnmanaged(u8) = .{};
+        var alt: std.ArrayListUnmanaged(u8) = .empty;
         errdefer alt.deinit(allocator);
 
         for (input) |c| {

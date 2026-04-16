@@ -61,7 +61,7 @@ pub const EncodingError = legacy_errors.LegacyEncodingError;
 /// - 0x81-0x9F, 0xE0-0xFC: First byte of double-byte
 /// - Second byte: 0x40-0x7E, 0x80-0xFC
 fn decodeShiftJIS(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -104,7 +104,7 @@ fn decodeShiftJIS(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeShiftJIS(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -212,7 +212,7 @@ fn reverseShiftJIS(codepoint: u21) ?[2]u8 {
 /// - 0xA1-0xFE + 0xA1-0xFE: JIS X 0208
 /// - 0x8F + 0xA1-0xFE + 0xA1-0xFE: JIS X 0212
 fn decodeEUCJP(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -267,7 +267,7 @@ fn decodeEUCJP(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeEUCJP(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -589,8 +589,7 @@ const jis0208_kanji = [_]u21{
     0x8863, 0x8B02, 0x9055, 0x907A, 0x533B, 0x4E95, 0x4EA5, 0x57DF,
     0x80B2, 0x90C1, 0x78EF, 0x4E00, 0x58F1, 0x6EA2, 0x9038, 0x7A32,
     0x8328, 0x828B, 0x9C2F, 0x5141, 0x5370, 0x54BD, 0x54E1, 0x56E0,
-    0x59FB, 0x5F15, 0x98F2, 0x6DEB, 0x80E4,
-    0x852D,
+    0x59FB, 0x5F15, 0x98F2, 0x6DEB, 0x80E4, 0x852D,
     // Continue with more kanji...
 };
 
@@ -598,8 +597,7 @@ const jis0208_kanji = [_]u21{
 const jis0212_chars = [_]u21{
     // Supplementary kanji not in JIS X 0208
     0x02D8, 0x02C7, 0x00B8, 0x02D9, 0x02DD, 0x00AF, 0x02DB, 0x02DA,
-    0xFF5E, 0x0384, 0x0385, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD,
-    0xFFFD,
+    0xFF5E, 0x0384, 0x0385, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD,
     // ... more supplementary characters
 };
 

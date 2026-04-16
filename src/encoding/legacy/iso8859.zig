@@ -57,7 +57,7 @@ pub const ISO8859 = enum {
 
     /// Decode ISO-8859 bytes to UTF-8
     pub fn decode(self: ISO8859, allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         for (input) |byte| {
@@ -76,7 +76,7 @@ pub const ISO8859 = enum {
 
     /// Encode UTF-8 to ISO-8859 bytes
     pub fn encode(self: ISO8859, allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         var iter = std.unicode.Utf8Iterator{ .bytes = input, .i = 0 };

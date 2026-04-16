@@ -6,6 +6,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// Return the current monotonic timestamp in nanoseconds.
+fn nowNs() u64 {
+    const _io = std.Io.Threaded.global_single_threaded.io();
+    const ts = std.Io.Timestamp.now(_io, .awake);
+    return @intCast(@max(0, ts.nanoseconds));
+}
+
 /// Benchmark result for a single operation
 pub const BenchResult = struct {
     name: []const u8,
@@ -64,15 +71,14 @@ pub fn runBenchmark(
 
     // Estimate iterations needed
     var iterations: u64 = config.min_iterations;
-    var timer = std.time.Timer.start() catch @panic("Timer unavailable");
 
     // Quick probe to estimate iteration count
-    const probe_start = timer.read();
+    const probe_start = nowNs();
     var probe_i: u64 = 0;
     while (probe_i < 10) : (probe_i += 1) {
         func();
     }
-    const probe_time = timer.read() - probe_start;
+    const probe_time = nowNs() - probe_start;
 
     if (probe_time > 0) {
         const estimated = (config.min_time_ns * 10) / probe_time;
@@ -86,9 +92,9 @@ pub fn runBenchmark(
 
     var i: u64 = 0;
     while (i < iterations) : (i += 1) {
-        const start = timer.read();
+        const start = nowNs();
         func();
-        const elapsed = timer.read() - start;
+        const elapsed = nowNs() - start;
 
         total_ns += elapsed;
         min_ns = @min(min_ns, elapsed);

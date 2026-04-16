@@ -481,7 +481,7 @@ pub fn fuzzySearch(
     candidates: []const []const u8,
     max_results: usize,
 ) ![]FuzzyMatch {
-    var matches: std.ArrayListUnmanaged(FuzzyMatch) = .{};
+    var matches: std.ArrayListUnmanaged(FuzzyMatch) = .empty;
     errdefer matches.deinit(allocator);
 
     for (candidates, 0..) |candidate, i| {
@@ -512,7 +512,7 @@ pub fn fuzzySearchThreshold(
     candidates: []const []const u8,
     min_score: f64,
 ) ![]FuzzyMatch {
-    var matches: std.ArrayListUnmanaged(FuzzyMatch) = .{};
+    var matches: std.ArrayListUnmanaged(FuzzyMatch) = .empty;
     errdefer matches.deinit(allocator);
 
     for (candidates, 0..) |candidate, i| {

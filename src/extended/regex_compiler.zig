@@ -45,8 +45,8 @@ pub const Compiler = struct {
     pub fn init(allocator: std.mem.Allocator) Compiler {
         return .{
             .allocator = allocator,
-            .code = .{},
-            .char_classes = .{},
+            .code = .empty,
+            .char_classes = .empty,
             .pattern = "",
             .pos = 0,
             .group_count = 0,
@@ -144,9 +144,9 @@ pub const Compiler = struct {
         }
 
         // There is alternation - use split instructions
-        var split_addrs: std.ArrayListUnmanaged(u32) = .{};
+        var split_addrs: std.ArrayListUnmanaged(u32) = .empty;
         defer split_addrs.deinit(self.allocator);
-        var jump_addrs: std.ArrayListUnmanaged(u32) = .{};
+        var jump_addrs: std.ArrayListUnmanaged(u32) = .empty;
         defer jump_addrs.deinit(self.allocator);
 
         // Emit split for first branch (to be patched)
@@ -313,7 +313,7 @@ pub const Compiler = struct {
             _ = self.advance();
         }
 
-        var ranges: std.ArrayListUnmanaged(CharClass.Range) = .{};
+        var ranges: std.ArrayListUnmanaged(CharClass.Range) = .empty;
         defer ranges.deinit(self.allocator);
 
         while (self.peek()) |c| {

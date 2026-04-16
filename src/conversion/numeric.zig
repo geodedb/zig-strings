@@ -175,16 +175,57 @@ pub fn formatFloat(allocator: std.mem.Allocator, value: anytype) ![]u8 {
 
 /// Formats a floating-point number with precision
 pub fn formatFloatPrecision(allocator: std.mem.Allocator, value: anytype, precision: usize) ![]u8 {
+    // Format with full precision first, then truncate/round to desired precision.
     var buf: [128]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const writer = fbs.writer();
+    const full = std.fmt.bufPrint(&buf, "{d}", .{value}) catch return StringError.BufferTooSmall;
 
-    // Format the float with specified precision using std.fmt.format
-    std.fmt.formatFloatDecimal(value, .{ .precision = precision }, writer) catch return StringError.BufferTooSmall;
+    if (precision == 0) {
+        // Round to integer
+        const rounded: i64 = @intFromFloat(@round(@as(f64, @floatCast(value))));
+        const result = std.fmt.allocPrint(allocator, "{d}", .{rounded}) catch return StringError.BufferTooSmall;
+        return result;
+    }
 
-    const slice = fbs.getWritten();
-    const result = try allocator.alloc(u8, slice.len);
-    @memcpy(result, slice);
+    // Find the decimal point
+    const dot_pos = std.mem.indexOf(u8, full, ".") orelse {
+        // No decimal point -- add one with trailing zeros
+        const result = try allocator.alloc(u8, full.len + 1 + precision);
+        @memcpy(result[0..full.len], full);
+        result[full.len] = '.';
+        @memset(result[full.len + 1 ..], '0');
+        return result;
+    };
+
+    // Calculate digits after the decimal point
+    const digits_after = full.len - dot_pos - 1;
+    if (digits_after <= precision) {
+        // Not enough digits: pad with zeros
+        const result = try allocator.alloc(u8, dot_pos + 1 + precision);
+        @memcpy(result[0..full.len], full);
+        @memset(result[full.len..], '0');
+        return result;
+    }
+
+    // Truncate with rounding
+    const keep = dot_pos + 1 + precision;
+    const next_digit = full[keep] - '0';
+    const result = try allocator.alloc(u8, keep);
+    @memcpy(result, full[0..keep]);
+    if (next_digit >= 5) {
+        // Round up the last digit
+        var carry: bool = true;
+        var i: usize = keep;
+        while (i > 0 and carry) {
+            i -= 1;
+            if (result[i] == '.') continue;
+            if (result[i] < '9') {
+                result[i] += 1;
+                carry = false;
+            } else {
+                result[i] = '0';
+            }
+        }
+    }
     return result;
 }
 

@@ -409,16 +409,18 @@ test "S17: global step budget prevents ReDoS across starting positions" {
     // New behavior: 1_000_000 steps total, then abort. Should complete in <1s.
     const input = "a" ** 10_000;
 
-    const start = std.time.nanoTimestamp();
+    const _io = std.Io.Threaded.global_single_threaded.io();
+    const start = std.Io.Timestamp.now(_io, .awake);
     var vm = VM.init(compiled.pattern, input);
     const result = vm.execute();
-    const elapsed_ns = std.time.nanoTimestamp() - start;
+    const end = std.Io.Timestamp.now(_io, .awake);
+    const elapsed_ns = end.nanoseconds - start.nanoseconds;
 
     // Must not match (no trailing 'b')
     try testing.expect(result == null);
 
     // Must complete within 5 seconds (generous bound; typically <100ms)
-    const five_seconds_ns: i128 = 5 * std.time.ns_per_s;
+    const five_seconds_ns: i96 = 5 * std.time.ns_per_s;
     try testing.expect(elapsed_ns < five_seconds_ns);
 }
 

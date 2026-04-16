@@ -61,7 +61,7 @@ pub const EncodingError = legacy_errors.LegacyEncodingError;
 /// Rows 16-55: Level 1 Chinese characters (3755 chars, sorted by pinyin)
 /// Rows 56-87: Level 2 Chinese characters (3008 chars, sorted by radical)
 fn decodeGB2312(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -98,7 +98,7 @@ fn decodeGB2312(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeGB2312(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -144,7 +144,7 @@ fn encodeGB2312(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 /// - Second byte: 0x40-0x7E or 0x80-0xFE
 /// Total: 21,886 characters including all GB2312 characters
 fn decodeGBK(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -176,7 +176,7 @@ fn decodeGBK(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeGBK(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -221,7 +221,7 @@ fn encodeGBK(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 ///
 /// 4-byte sequences can encode any Unicode code point not covered by 1/2-byte forms
 fn decodeGB18030(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -268,7 +268,7 @@ fn decodeGB18030(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 fn encodeGB18030(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
@@ -601,8 +601,7 @@ const gbk_extensions = [_]u21{
     0x4E02, 0x4E04, 0x4E05, 0x4E06, 0x4E0F, 0x4E12, 0x4E17, 0x4E1F,
     0x4E20, 0x4E21, 0x4E23, 0x4E26, 0x4E29, 0x4E2E, 0x4E2F, 0x4E31,
     0x4E33, 0x4E35, 0x4E37, 0x4E3C, 0x4E40, 0x4E41, 0x4E42, 0x4E44,
-    0x4E46, 0x4E4A, 0x4E51, 0x4E55, 0x4E57, 0x4E5A, 0x4E5B,
-    0x4E62,
+    0x4E46, 0x4E4A, 0x4E51, 0x4E55, 0x4E57, 0x4E5A, 0x4E5B, 0x4E62,
     // ... more extension characters
 };
 

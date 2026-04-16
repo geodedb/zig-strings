@@ -24,8 +24,8 @@
 //! - **SIMD Acceleration**: Vectorized operations where available
 //! - **Extended**: Regex, fuzzy matching, phonetic algorithms, locale formatting
 //! - **Legacy Encodings**: Windows code pages, ISO-8859, CJK encodings, Big5
-//! - **Parallel Operations**: Spice-based parallel string processing
-//! - **Minimal Dependencies**: Pure Zig with optional spice parallelism dependency
+//! - **Parallel Operations**: Thread-pool-based parallel string processing
+//! - **Minimal Dependencies**: Pure Zig with optional thread-pool parallelism dependency
 //!
 //! ## Quick Start
 //!
@@ -172,7 +172,7 @@ pub const mmap = @import("mmap");
 /// Lazy Unicode normalization
 pub const lazy_norm = @import("lazy_norm");
 
-/// Parallel string operations (spice-based).
+/// Parallel string operations (thread-pool-based).
 ///
 /// The parallel module is **opt-in by design**: callers explicitly choose
 /// parallel variants for large-input workloads. Transparent auto-dispatch
@@ -274,12 +274,12 @@ pub const CompareOptions = types.CompareOptions;
 // Library Lifecycle
 // ============================================================
 
-/// Deinitializes all library-level resources (e.g., the spice thread pool).
+/// Deinitializes all library-level resources (e.g., the thread pool).
 ///
 /// Call this once after all string operations are complete to avoid leaking
 /// threads. It is safe to call even if no parallel operations were performed
 /// (the function is a no-op when the pool was never initialized or when
-/// spice is disabled).
+/// the thread-pool is disabled).
 ///
 /// **Warning:** Do not call while parallel operations are in-flight.
 pub fn deinit() void {

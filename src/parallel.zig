@@ -22,7 +22,11 @@ const tp = @import("thread_pool");
 // ============================================================================
 
 var global_pool: ?tp.ThreadPool = null;
-var pool_mutex: std.Thread.Mutex = .{};
+var pool_mutex: std.Io.Mutex = .init;
+
+inline fn io() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
+}
 
 /// Get the global thread pool, initializing if needed.
 ///
@@ -30,8 +34,8 @@ var pool_mutex: std.Thread.Mutex = .{};
 /// threads. Initialization is protected by an internal mutex, ensuring
 /// the pool is created exactly once (lazy singleton pattern).
 pub fn getPool() *tp.ThreadPool {
-    pool_mutex.lock();
-    defer pool_mutex.unlock();
+    pool_mutex.lockUncancelable(io());
+    defer pool_mutex.unlock(io());
 
     if (global_pool == null) {
         global_pool = tp.ThreadPool.init(std.heap.page_allocator, .{}) catch
@@ -48,8 +52,8 @@ pub fn getPool() *tp.ThreadPool {
 /// completed before calling this function. Violating this invariant causes
 /// undefined behavior.
 pub fn deinitPool() void {
-    pool_mutex.lock();
-    defer pool_mutex.unlock();
+    pool_mutex.lockUncancelable(io());
+    defer pool_mutex.unlock(io());
 
     if (global_pool) |*pool| {
         pool.deinit();

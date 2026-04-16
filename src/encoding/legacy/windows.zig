@@ -51,7 +51,7 @@ pub const CodePage = enum {
     pub fn decode(self: CodePage, allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         const table = self.getDecodeTable();
         const low_table = self.getLowByteTable();
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         for (input) |byte| {
@@ -83,7 +83,7 @@ pub const CodePage = enum {
 
     /// Encode UTF-8 to code page bytes
     pub fn encode(self: CodePage, allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-        var result: std.ArrayListUnmanaged(u8) = .{};
+        var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(allocator);
 
         var iter = std.unicode.Utf8Iterator{ .bytes = input, .i = 0 };

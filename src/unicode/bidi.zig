@@ -191,7 +191,7 @@ pub fn containsBidiOverrides(text: []const u8) bool {
 /// returning a newly allocated string.
 /// Caller owns the returned memory and must free it with the same allocator.
 pub fn stripBidiOverrides(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
     // Most characters are kept; pre-allocate for the full input length.
     try result.ensureTotalCapacity(allocator, text.len);

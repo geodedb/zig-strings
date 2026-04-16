@@ -302,12 +302,12 @@ pub const String = struct {
     }
 
     /// Splits the string by a delimiter
-    pub fn split(self: String, delimiter: []const u8) ![][]const u8 {
+    pub fn split(self: *const String, delimiter: []const u8) ![][]const u8 {
         return manipulation.split(self.allocator, self.bytes(), delimiter);
     }
 
     /// Returns a substring by code point indices
-    pub fn substring(self: String, start: usize, end_opt: ?usize) []const u8 {
+    pub fn substring(self: *const String, start: usize, end_opt: ?usize) []const u8 {
         return manipulation.substring(self.bytes(), start, end_opt);
     }
 

@@ -442,3 +442,21 @@ test "convenience functions" {
 
     try testing.expectEqualSlices(u8, "hello", trim("  hello  "));
 }
+
+test "parallel re-export is reachable" {
+    // Smoke test: verify parallel.zig is reachable through the public
+    // strings root module and a batch op returns a correct result
+    // end-to-end. Build a >4 KB haystack to hit the parallel fast path
+    // (threshold: 4 KB) rather than the sequential fallback.
+    var haystack: [8192]u8 = undefined;
+    @memset(&haystack, 'a');
+    // Inject 3 "needle" markers at known offsets.
+    @memcpy(haystack[100..106], "needle");
+    @memcpy(haystack[2000..2006], "needle");
+    @memcpy(haystack[6000..6006], "needle");
+
+    const count = parallel.parallelCount(u8, &haystack, "needle");
+    defer deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), count);
+}

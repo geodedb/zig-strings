@@ -85,6 +85,8 @@ stages:
 # Override zig-format component to use the project's ZIG_VERSION.
 # The v1.2.1 component defaults to 0.14.0 and does not accept a version input.
 zig-format:
+  variables:
+    ZIG_VERSION: "0.16.0"
   before_script:
     - *install-zig
 

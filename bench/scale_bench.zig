@@ -408,9 +408,11 @@ fn writeSummary(results: []const TierResult) void {
 pub fn main(init: std.process.Init) !void {
     const allocator = std.heap.page_allocator;
 
-    // Parse optional tier limit argument
+    // Parse optional tier limit argument. Iterator.init does not work on
+    // Windows; use initAllocator to stay cross-platform.
     var max_tiers: usize = tiers.len;
-    var args = std.process.Args.Iterator.init(init.minimal.args);
+    var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
+    defer args.deinit();
     _ = args.next(); // program name
     if (args.next()) |arg| {
         max_tiers = std.fmt.parseInt(usize, arg, 10) catch tiers.len;

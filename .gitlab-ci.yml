@@ -20,7 +20,7 @@ include:
   - component: gitlab.com/devnw/ci-catalog/release-semantic@v1.7.1
 
 variables:
-  ZIG_VERSION: "0.15.2"
+  ZIG_VERSION: "0.16.0"
 
 # Q-CI1: Cache the Zig toolchain directory across jobs to avoid redundant
 # ~70 MB downloads on every job invocation. The .install-zig anchor already
@@ -257,4 +257,3 @@ bench-regression:
   allow_failure: true
   needs:
     - build
-

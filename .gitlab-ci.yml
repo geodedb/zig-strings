@@ -31,6 +31,8 @@ default:
     key: "zig-${ZIG_VERSION}"
     paths:
       - zig-${ZIG_VERSION}/
+  tags:
+    - company
 
 stages:
   - lint

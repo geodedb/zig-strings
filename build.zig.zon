@@ -6,8 +6,8 @@
 
     .dependencies = .{
         .thread_pool = .{
-            .url = "git+https://gitlab.com/devnw/zig/thread-pool.git#7fb7501563b447bec3ef253be14d9f8d8f0443ef",
-            .hash = "thread_pool-0.2.1-11B1BoLIdgChPpTBcutApyan1-i28GNwa8xB1ojizPL0",
+            .url = "git+https://gitlab.com/devnw/zig/thread-pool.git#930d41bcd52b0f92f5405da69a72949a970a2990",
+            .hash = "thread_pool-0.2.1-11B1BobIdgAJ7WWVFfqS0BxtbO_vXdSevdXwauTZhSuS",
         },
     },
 

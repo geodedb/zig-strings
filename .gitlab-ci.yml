@@ -17,7 +17,9 @@ include:
   - component: gitlab.com/devnw/ci-catalog/sbom-scan@v1.54.6
 
   # Release
-  - component: gitlab.com/devnw/ci-catalog/release-semantic@v1.54.6
+  # release-semantic: commit that ci-catalog tag v1.55.6 resolved to
+  # (job-token creation of NEW releases under pipefail, SONNY-3448).
+  - component: gitlab.com/devnw/ci-catalog/release-semantic@ec7cf51d24c8dce002f44a084ddacc8c829d27f7
     inputs:
       release_auth: job_token
       tags: ["company"]

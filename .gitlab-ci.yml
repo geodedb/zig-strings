@@ -22,7 +22,7 @@ include:
   - component: gitlab.com/devnw/ci-catalog/release-semantic@ec7cf51d24c8dce002f44a084ddacc8c829d27f7
     inputs:
       release_auth: job_token
-      tags: ["company"]
+      tags: ["company", "linux"]
   - component: gitlab.com/devnw/ci-catalog/zig-version-tag-check@v1.55.8
 
 variables:
@@ -39,6 +39,7 @@ default:
       - zig-${ZIG_VERSION}/
   tags:
     - company
+    - linux
 
 stages:
   - lint

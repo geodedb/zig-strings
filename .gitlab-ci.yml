@@ -5,16 +5,30 @@
 include:
   # Security scanning
   - component: gitlab.com/devnw/ci-catalog/security-sast@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
   - component: gitlab.com/devnw/ci-catalog/security-dependency-scanning@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
   - component: gitlab.com/devnw/ci-catalog/security-secrets@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
   - component: gitlab.com/devnw/ci-catalog/security-gitleaks@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
 
   # Code quality
   - component: gitlab.com/devnw/ci-catalog/zig-format@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
 
   # SBOM
   - component: gitlab.com/devnw/ci-catalog/sbom-generate@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
   - component: gitlab.com/devnw/ci-catalog/sbom-scan@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
 
   # Release
   # release-semantic: commit that ci-catalog tag v1.55.6 resolved to
@@ -22,8 +36,10 @@ include:
   - component: gitlab.com/devnw/ci-catalog/release-semantic@ec7cf51d24c8dce002f44a084ddacc8c829d27f7
     inputs:
       release_auth: job_token
-      tags: ["company", "linux"]
+      tags: ["company", "linux", "x86"]
   - component: gitlab.com/devnw/ci-catalog/zig-version-tag-check@v1.55.8
+    inputs:
+      tags: ["company", "linux", "x86"]
 
 variables:
   ZIG_VERSION: "0.16.0"
@@ -40,6 +56,7 @@ default:
   tags:
     - company
     - linux
+    - x86
 
 stages:
   - lint
@@ -268,3 +285,13 @@ bench-regression:
   allow_failure: true
   needs:
     - build
+
+# SONNY-4778: tools must not redirect Git operations into this worktree.
+hook-env-regression:
+  stage: lint
+  image: python:3.14-slim-bookworm
+  tags: [company, linux, x86]
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+  script:
+    - python3 scripts/test_hook_env.py

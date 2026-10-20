@@ -57,7 +57,8 @@ default:
   tags:
     - company
     - linux
-    - x86
+    # Inherited GitLab SAST images are AMD64-only; avoid ARM fleet runners.
+    - amd64
 
 stages:
   - lint
